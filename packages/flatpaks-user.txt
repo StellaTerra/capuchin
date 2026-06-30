@@ -1,0 +1,16 @@
+flathub	com.discordapp.Discord	stable
+flathub	com.github.maoschanz.drawing	stable
+flathub	com.google.Chrome	stable
+flathub	com.seafile.Client	stable
+flathub	com.tomjwatson.Emote	stable
+flathub	com.ultimaker.cura	stable
+cosmic	dev.DBrox.CosmicSystemMonitor	master
+cosmic	io.github.cosmic_utils.minimon-applet	master
+flathub	io.mango3d.LycheeSlicer	stable
+flathub	org.gnome.SoundRecorder	stable
+flathub	org.kde.okular	stable
+flathub	org.libreoffice.LibreOffice	stable
+flathub	org.localsend.localsend_app	stable
+flathub	org.signal.Signal	stable
+flathub	tv.plex.PlexDesktop	stable
+flathub	us.zoom.Zoom	stable

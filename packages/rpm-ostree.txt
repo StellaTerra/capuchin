@@ -1,0 +1,11 @@
+1password
+1password-cli
+NetworkManager-openvpn
+borgbackup
+borgmatic
+btop
+chezmoi
+code
+libavcodec-freeworld
+podman-compose
+vim
