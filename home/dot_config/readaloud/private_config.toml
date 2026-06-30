@@ -1,0 +1,6 @@
+voice = "en_US-hfc_female-medium"
+rate = 50
+sentence_silence = 0.05
+volume = 1.0
+audio_backend = "auto"
+execution_provider = "cpu"

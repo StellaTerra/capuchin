@@ -201,12 +201,23 @@ install_missing_user_flatpaks() {
   done
 }
 
+apply_home_config() {
+  if ! command -v chezmoi >/dev/null 2>&1; then
+    printf 'chezmoi: not available in this boot; rerun after rpm-ostree apply-live or reboot\n'
+    return
+  fi
+
+  printf 'chezmoi: applying home configuration from %s\n' "$ROOT"
+  chezmoi --source "$ROOT" apply
+}
+
 main() {
   install_rpm_repo_files
   install_rpm_ostree_repo_packages
   ensure_flatpak_user_remotes
   install_missing_rpm_ostree_packages
   install_missing_user_flatpaks
+  apply_home_config
 }
 
 main "$@"
