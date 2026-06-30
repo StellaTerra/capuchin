@@ -1,0 +1,21 @@
+[projects."/var/home/stella"]
+trust_level = "trusted"
+
+[projects."/var/home/stella/marmoset"]
+trust_level = "trusted"
+
+[projects."/var/home/stella/readaloud"]
+trust_level = "trusted"
+
+[projects."/var/home/stella/marmoset/biometrics-protocol"]
+trust_level = "trusted"
+
+[projects."/var/home/stella/capuchin"]
+trust_level = "trusted"
+
+[tui]
+status_line = ["model-with-reasoning", "current-dir", "context-used", "five-hour-limit", "weekly-limit"]
+status_line_use_colors = true
+
+[tui.model_availability_nux]
+"gpt-5.5" = 4

@@ -1,0 +1,34 @@
+{
+    (
+        modifiers: [
+            Super,
+        ],
+        key: "space",
+    ): System(Launcher),
+    (
+        modifiers: [
+            Super,
+        ],
+        key: "semicolon",
+        description: Some("Emote"),
+    ): Spawn("flatpak run com.tomjwatson.Emote"),
+    (
+        modifiers: [
+            Super,
+        ],
+        key: "Escape",
+    ): Spawn("/home/stella/.local/bin/speak-selection"),
+    (
+        modifiers: [
+            Super,
+            Shift,
+        ],
+        key: "s",
+        description: Some("Screenshot"),
+    ): Spawn("cosmic-screenshot"),
+    (
+        modifiers: [
+            Super,
+        ],
+    ): Disable,
+}
