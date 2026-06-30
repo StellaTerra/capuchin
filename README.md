@@ -21,6 +21,7 @@ Flatpaks, or delete unmanaged home files.
 - `repos/yum.repos.d/`: external RPM repo files copied into `/etc/yum.repos.d`.
 - `repos/rpm-gpg/`: GPG keys copied into `/etc/pki/rpm-gpg`.
 - `repos/flatpak-remotes-user.txt`: user Flatpak remotes.
+- `system/`: root-owned system files installed by bootstrap.
 - `.chezmoiroot`: tells chezmoi to treat `home/` as the source root.
 - `home/`: chezmoi-managed home-directory state.
 
@@ -30,11 +31,13 @@ Flatpaks, or delete unmanaged home files.
 
 1. Copies managed RPM GPG keys into `/etc/pki/rpm-gpg`.
 2. Copies managed RPM repo files into `/etc/yum.repos.d`.
-3. Layers missing repo-release RPMs with `rpm-ostree install`.
-4. Adds missing user Flatpak remotes.
-5. Layers missing packages from `packages/rpm-ostree.txt`.
-6. Installs missing user Flatpak apps from `packages/flatpaks-user.txt`.
-7. Applies home configuration with `chezmoi --source "$ROOT" apply` if
+3. Installs managed system files for the Borgmatic backup timer.
+4. Enables and starts `borgmatic-marmoset.timer`.
+5. Layers missing repo-release RPMs with `rpm-ostree install`.
+6. Adds missing user Flatpak remotes.
+7. Layers missing packages from `packages/rpm-ostree.txt`.
+8. Installs missing user Flatpak apps from `packages/flatpaks-user.txt`.
+9. Applies home configuration with `chezmoi --source "$ROOT" apply` if
    `chezmoi` is available in the current boot.
 
 The rpm-ostree comparison prefers a staged deployment when one exists. This
@@ -49,6 +52,8 @@ System/package coverage:
   borg/borgmatic, podman-compose, btop, vim, OpenVPN NetworkManager support,
   and RPM Fusion codec support.
 - External RPM repos for RPM Fusion, 1Password, and VS Code.
+- System Borgmatic backup service/timer for Marmoset, plus the non-secret
+  Borgmatic config and wrapper script.
 - User Flatpak remotes for Flathub and COSMIC.
 - User Flatpak apps, not runtime dependencies. Flatpak resolves runtimes itself.
 
@@ -61,6 +66,8 @@ Home configuration coverage:
 - WirePlumber audio rules for hidden/internal outputs and friendly device names.
 - btop config.
 - MIME defaults.
+- XDG user directories and locale.
+- Qalculate, Ark, KDE, and Qt theme integration preferences.
 - Autostart entries for 1Password, Discord, and Signal.
 - Curated COSMIC preferences: keyboard/input behavior, shortcuts, tiling/focus,
   panel composition, compact window controls, file manager preferences, applet
@@ -78,6 +85,8 @@ Deliberately not covered:
 - COSMIC wallpaper image paths, screenshot rectangle state, and monitor output
   layout.
 - Downloads, Trash, recent files, application caches, and generated logs.
+- Borg/Marmoset private backup material under `/etc/borg-marmoset`: SSH private
+  key, known_hosts, and repository passphrase.
 
 ## Rebuilding Capuchin
 
@@ -174,13 +183,33 @@ These steps assume a fresh Fedora COSMIC Atomic install on this laptop.
    for 1Password, browsers, Signal, Discord, Seafile, and any other apps whose
    secrets or runtime state are not managed by chezmoi.
 
-10. Validate expected workstation behavior.
+10. Restore Borg/Marmoset backup secrets.
+
+   The backup service is installed by this repo, but its private material is not
+   tracked. Restore these files before relying on backups:
+
+   ```text
+   /etc/borg-marmoset/ssh_key
+   /etc/borg-marmoset/known_hosts
+   /etc/borg-marmoset/passphrase
+   ```
+
+   Then validate and start the timer:
+
+   ```bash
+   sudo borgmatic --config /etc/borgmatic/config.yaml config validate
+   systemctl status borgmatic-marmoset.timer --no-pager
+   systemctl status borgmatic-marmoset.service --no-pager
+   ```
+
+11. Validate expected workstation behavior.
 
    Suggested checks:
 
    ```bash
    chezmoi --source /var/home/stella/capuchin diff
    systemctl --user status readaloud.service --no-pager
+   systemctl status borgmatic-marmoset.timer --no-pager
    flatpak list --user --app
    rpm-ostree status
    ./audit.sh

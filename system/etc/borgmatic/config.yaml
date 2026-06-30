@@ -1,0 +1,51 @@
+repositories:
+  - path: ssh://borg-capuchin@marmoset/var/marmoset/backups/borg/capuchin/repo
+    label: marmoset
+
+source_directories:
+  - /var/home/stella
+  - /etc
+
+one_file_system: true
+exclude_caches: true
+compression: zstd,6
+archive_name_format: capuchin-{now:%Y-%m-%dT%H:%M:%S}
+
+ssh_command: ssh -i /etc/borg-marmoset/ssh_key -o UserKnownHostsFile=/etc/borg-marmoset/known_hosts -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes
+encryption_passcommand: cat /etc/borg-marmoset/passphrase
+
+exclude_patterns:
+  - /var/home/stella/Seafile
+  - /var/home/stella/Downloads
+  - /var/home/stella/readaloud
+  - /var/home/stella/marmoset
+  - /var/home/stella/.git
+  - /var/home/stella/.cache
+  - /var/home/stella/.local/share/Trash
+  - /var/home/stella/.local/share/flatpak/app
+  - /var/home/stella/.local/share/flatpak/runtime
+  - /var/home/stella/.local/share/flatpak/repo
+  - /var/home/stella/.local/share/flatpak/appstream
+  - /var/home/stella/.local/share/flatpak/.removed
+  - /var/home/stella/.local/share/readaloud
+  - /var/home/stella/.codex/cache
+  - /var/home/stella/.codex/tmp
+  - /var/home/stella/.codex/.tmp
+  - /var/home/stella/.codex/packages
+  - /var/home/stella/.1password/agent.sock
+  - sh:/var/home/stella/.var/app/*/cache
+  - sh:/var/home/stella/.var/app/*/config/*/Cache
+  - sh:/var/home/stella/.var/app/*/config/*/Code Cache
+  - sh:/var/home/stella/.var/app/*/config/*/GPUCache
+  - sh:/var/home/stella/.var/app/*/config/*/Crashpad
+  - sh:/var/home/stella/.var/app/*/config/*/logs
+  - sh:/var/home/stella/.var/app/*/config/*/temp
+  - sh:/var/home/stella/.var/app/*/config/*/tmp
+  - sh:/var/home/stella/.config/mozilla/firefox/Crash Reports
+  - sh:/var/home/stella/.config/mozilla/firefox/Pending Pings
+  - sh:/var/home/stella/.config/mozilla/firefox/*/weave/logs
+  - sh:/var/home/stella/.config/mozilla/firefox/*/datareporting
+
+keep_daily: 7
+keep_weekly: 4
+keep_monthly: 12

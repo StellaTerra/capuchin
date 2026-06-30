@@ -8,6 +8,7 @@ RPM_OSTREE_REPOS="$ROOT/repos/rpm-ostree-repos.txt"
 RPM_REPO_FILES_DIR="$ROOT/repos/yum.repos.d"
 RPM_GPG_DIR="$ROOT/repos/rpm-gpg"
 USER_FLATPAK_REMOTES="$ROOT/repos/flatpak-remotes-user.txt"
+SYSTEM_FILES_DIR="$ROOT/system"
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -47,7 +48,11 @@ install_if_changed() {
   local destination="$2"
   local mode="$3"
 
-  if [[ -f "$destination" ]] && cmp -s "$source" "$destination"; then
+  if [[ -r "$destination" ]] && cmp -s "$source" "$destination"; then
+    return
+  fi
+
+  if [[ ! -r "$destination" ]] && as_root test -f "$destination" && as_root cmp -s "$source" "$destination"; then
     return
   fi
 
@@ -68,6 +73,27 @@ install_rpm_repo_files() {
   for file in "$RPM_REPO_FILES_DIR"/*.repo; do
     [[ -f "$file" ]] || continue
     install_if_changed "$file" "/etc/yum.repos.d/$(basename "$file")" 0644
+  done
+}
+
+install_system_files() {
+  need_cmd cmp
+  need_cmd install
+
+  install_if_changed "$SYSTEM_FILES_DIR/etc/borgmatic/config.yaml" "/etc/borgmatic/config.yaml" 0600
+  install_if_changed "$SYSTEM_FILES_DIR/etc/systemd/system/borgmatic-marmoset.service" "/etc/systemd/system/borgmatic-marmoset.service" 0644
+  install_if_changed "$SYSTEM_FILES_DIR/etc/systemd/system/borgmatic-marmoset.timer" "/etc/systemd/system/borgmatic-marmoset.timer" 0644
+  install_if_changed "$SYSTEM_FILES_DIR/usr/local/sbin/borgmatic-marmoset-backup" "/usr/local/sbin/borgmatic-marmoset-backup" 0755
+
+  if command -v systemctl >/dev/null 2>&1; then
+    as_root systemctl daemon-reload
+    as_root systemctl enable --now borgmatic-marmoset.timer
+  fi
+
+  for file in /etc/borg-marmoset/ssh_key /etc/borg-marmoset/known_hosts /etc/borg-marmoset/passphrase; do
+    if ! as_root test -e "$file"; then
+      printf 'borgmatic: missing secret file %s; restore it before backups can run\n' "$file"
+    fi
   done
 }
 
@@ -213,6 +239,7 @@ apply_home_config() {
 
 main() {
   install_rpm_repo_files
+  install_system_files
   install_rpm_ostree_repo_packages
   ensure_flatpak_user_remotes
   install_missing_rpm_ostree_packages

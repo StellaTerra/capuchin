@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+notify_user="stella"
+notify_uid="$(id -u "$notify_user")"
+notify() {
+  local title="$1"
+  local body="$2"
+
+  if [[ -S "/run/user/$notify_uid/bus" ]]; then
+    sudo -u "$notify_user" \
+      DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$notify_uid/bus" \
+      notify-send "$title" "$body" || true
+  fi
+}
+
+log_file="/var/log/borgmatic-marmoset.log"
+actions=(create prune compact check)
+
+set +e
+/usr/bin/borgmatic --config /etc/borgmatic/config.yaml "${actions[@]}" --verbosity 1 >"$log_file" 2>&1
+rc="$?"
+set -e
+
+if [[ "$rc" -eq 0 ]]; then
+  notify "Backup complete" "Capuchin backed up to Marmoset and retention completed."
+else
+  notify "Backup failed" "borgmatic exited with code $rc. See $log_file."
+fi
+
+exit "$rc"
