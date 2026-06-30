@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export LC_ALL=C
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RPM_OSTREE_PACKAGES="$ROOT/packages/rpm-ostree.txt"
@@ -26,18 +27,23 @@ print_diff() {
   local title="$1"
   local expected_file="$2"
   local actual_file="$3"
-  local missing_file extra_file
+  local expected_sorted actual_sorted missing_file extra_file
 
+  expected_sorted="$(mktemp)"
+  actual_sorted="$(mktemp)"
   missing_file="$(mktemp)"
   extra_file="$(mktemp)"
 
-  comm -23 "$expected_file" "$actual_file" >"$missing_file"
-  comm -13 "$expected_file" "$actual_file" >"$extra_file"
+  LC_ALL=C sort -u "$expected_file" >"$expected_sorted"
+  LC_ALL=C sort -u "$actual_file" >"$actual_sorted"
+
+  LC_ALL=C comm -23 "$expected_sorted" "$actual_sorted" >"$missing_file"
+  LC_ALL=C comm -13 "$expected_sorted" "$actual_sorted" >"$extra_file"
 
   printf '%s\n' "$title"
   if [[ ! -s "$missing_file" && ! -s "$extra_file" ]]; then
     printf '  ok: matches repo\n'
-    rm -f "$missing_file" "$extra_file"
+    rm -f "$expected_sorted" "$actual_sorted" "$missing_file" "$extra_file"
     return
   fi
 
@@ -51,7 +57,7 @@ print_diff() {
     sed 's/^/    /' "$extra_file"
   fi
 
-  rm -f "$missing_file" "$extra_file"
+  rm -f "$expected_sorted" "$actual_sorted" "$missing_file" "$extra_file"
 }
 
 expected_rpm_ostree_repo_packages() {
