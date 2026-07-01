@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RPM_OSTREE_PACKAGES="$ROOT/packages/rpm-ostree.txt"
+RPM_OSTREE_BASE_REMOVALS="$ROOT/packages/rpm-ostree-base-removals.txt"
 USER_FLATPAKS="$ROOT/packages/flatpaks-user.txt"
 RPM_OSTREE_REPOS="$ROOT/repos/rpm-ostree-repos.txt"
 RPM_REPO_FILES_DIR="$ROOT/repos/yum.repos.d"
@@ -149,6 +150,49 @@ if target is not None:
 ' <<<"$status_json"
 }
 
+current_rpm_ostree_base_removals() {
+  local status_json
+  status_json="$(rpm-ostree status --json)"
+
+  python3 -c '
+import json
+import sys
+
+status = json.load(sys.stdin)
+deployments = status.get("deployments", [])
+target = next((deployment for deployment in deployments if deployment.get("staged")), None)
+if target is None:
+    target = next((deployment for deployment in deployments if deployment.get("booted")), None)
+
+if target is not None:
+    for package in sorted(set(target.get("requested-base-removals", []))):
+        print(package)
+' <<<"$status_json"
+}
+
+remove_base_rpm_ostree_packages() {
+  need_cmd rpm-ostree
+  need_cmd python3
+
+  mapfile -t wanted < <(read_list "$RPM_OSTREE_BASE_REMOVALS" | sort -u)
+  mapfile -t removed < <(current_rpm_ostree_base_removals)
+
+  mapfile -t missing < <(
+    comm -23 \
+      <(printf '%s\n' "${wanted[@]}" | sort -u) \
+      <(printf '%s\n' "${removed[@]}" | sort -u)
+  )
+
+  if ((${#missing[@]} == 0)); then
+    printf 'rpm-ostree base removals: all requested base packages are already removed\n'
+    return
+  fi
+
+  printf 'rpm-ostree base removals: removing %d base package(s): %s\n' "${#missing[@]}" "${missing[*]}"
+  rpm-ostree override remove "${missing[@]}"
+  printf 'rpm-ostree base removals: removal staged; reboot may be required\n'
+}
+
 install_missing_rpm_ostree_packages() {
   need_cmd rpm-ostree
   need_cmd python3
@@ -242,6 +286,7 @@ main() {
   install_system_files
   install_rpm_ostree_repo_packages
   ensure_flatpak_user_remotes
+  remove_base_rpm_ostree_packages
   install_missing_rpm_ostree_packages
   install_missing_user_flatpaks
   apply_home_config

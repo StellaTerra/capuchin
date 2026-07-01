@@ -5,15 +5,18 @@ that after wiping the OS and reinstalling the same Fedora COSMIC Atomic base,
 running this repo restores the laptop's host packages, user Flatpaks, Flatpak
 remotes, RPM repositories, and selected home-directory configuration.
 
-The provisioning is intentionally additive and idempotent. It installs missing
-things and applies managed dotfiles, but it does not remove packages, uninstall
-Flatpaks, or delete unmanaged home files.
+The provisioning is intentionally conservative and idempotent. It installs
+missing things, applies managed dotfiles, and applies explicitly tracked
+rpm-ostree base package removals, but it does not uninstall layered packages,
+uninstall Flatpaks, or delete unmanaged home files.
 
 ## Layout
 
 - `bootstrap.sh`: main provisioning script.
 - `audit.sh`: read-only drift check for packages and Flatpak remotes.
 - `packages/rpm-ostree.txt`: desired rpm-ostree layered packages.
+- `packages/rpm-ostree-base-removals.txt`: base packages intentionally removed
+  with `rpm-ostree override remove`.
 - `packages/flatpaks-user.txt`: desired user Flatpak apps as
   `remote<TAB>application<TAB>branch`.
 - `repos/rpm-ostree-repos.txt`: repo-release RPMs to layer, currently RPM
@@ -35,9 +38,11 @@ Flatpaks, or delete unmanaged home files.
 4. Enables and starts `borgmatic-marmoset.timer`.
 5. Layers missing repo-release RPMs with `rpm-ostree install`.
 6. Adds missing user Flatpak remotes.
-7. Layers missing packages from `packages/rpm-ostree.txt`.
-8. Installs missing user Flatpak apps from `packages/flatpaks-user.txt`.
-9. Applies home configuration with `chezmoi --source "$ROOT" apply` if
+7. Removes base packages from `packages/rpm-ostree-base-removals.txt` with
+   `rpm-ostree override remove`.
+8. Layers missing packages from `packages/rpm-ostree.txt`.
+9. Installs missing user Flatpak apps from `packages/flatpaks-user.txt`.
+10. Applies home configuration with `chezmoi --source "$ROOT" apply` if
    `chezmoi` is available in the current boot.
 
 The rpm-ostree comparison prefers a staged deployment when one exists. This
@@ -51,6 +56,9 @@ System/package coverage:
 - rpm-ostree layered packages, including `chezmoi`, VS Code, 1Password,
   borg/borgmatic, podman-compose, btop, vim, OpenVPN NetworkManager support,
   and RPM Fusion codec support.
+- rpm-ostree base package removals required for layered package replacements,
+  currently `libva-intel-media-driver` so RPM Fusion's `intel-media-driver`
+  can be layered.
 - External RPM repos for RPM Fusion, 1Password, and VS Code.
 - System Borgmatic backup service/timer for Marmoset, plus the non-secret
   Borgmatic config and wrapper script.
@@ -169,6 +177,8 @@ These steps assume a fresh Fedora COSMIC Atomic install on this laptop.
    ```text
    rpm-ostree layered packages
      ok: matches repo
+   rpm-ostree base removals
+     ok: matches repo
    rpm-ostree repo packages
      ok: matches repo
    flatpak user remote names
@@ -220,6 +230,13 @@ These steps assume a fresh Fedora COSMIC Atomic install on this laptop.
 When adding a new rpm-ostree package intentionally:
 
 1. Install it normally, or add it to `packages/rpm-ostree.txt` first.
+2. Run `./bootstrap.sh`.
+3. Run `./audit.sh`.
+4. Commit the package-list change.
+
+When removing a base rpm-ostree package intentionally:
+
+1. Add it to `packages/rpm-ostree-base-removals.txt`.
 2. Run `./bootstrap.sh`.
 3. Run `./audit.sh`.
 4. Commit the package-list change.

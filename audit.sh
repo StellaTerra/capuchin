@@ -4,6 +4,7 @@ export LC_ALL=C
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RPM_OSTREE_PACKAGES="$ROOT/packages/rpm-ostree.txt"
+RPM_OSTREE_BASE_REMOVALS="$ROOT/packages/rpm-ostree-base-removals.txt"
 USER_FLATPAKS="$ROOT/packages/flatpaks-user.txt"
 RPM_OSTREE_REPOS="$ROOT/repos/rpm-ostree-repos.txt"
 USER_FLATPAK_REMOTES="$ROOT/repos/flatpak-remotes-user.txt"
@@ -94,6 +95,17 @@ for package in sorted(set(target.get("requested-packages", []))):
 '
 }
 
+actual_rpm_ostree_base_removals() {
+  rpm_ostree_target_json | python3 -c '
+import json
+import sys
+
+target = json.load(sys.stdin)
+for package in sorted(set(target.get("requested-base-removals", []))):
+    print(package)
+'
+}
+
 actual_rpm_ostree_repo_packages() {
   local package
   rpm_ostree_target_json | python3 -c '
@@ -130,6 +142,21 @@ audit_rpm_ostree_packages() {
   actual_rpm_ostree_layered_packages >"$actual"
 
   print_diff 'rpm-ostree layered packages' "$expected" "$actual"
+  rm -f "$expected" "$actual"
+}
+
+audit_rpm_ostree_base_removals() {
+  need_cmd rpm-ostree
+  need_cmd python3
+
+  local expected actual
+  expected="$(mktemp)"
+  actual="$(mktemp)"
+
+  read_list "$RPM_OSTREE_BASE_REMOVALS" | sort -u >"$expected"
+  actual_rpm_ostree_base_removals >"$actual"
+
+  print_diff 'rpm-ostree base removals' "$expected" "$actual"
   rm -f "$expected" "$actual"
 }
 
@@ -179,6 +206,7 @@ audit_flatpaks() {
 
 main() {
   audit_rpm_ostree_packages
+  audit_rpm_ostree_base_removals
   audit_rpm_ostree_repo_packages
   audit_flatpak_remotes
   audit_flatpaks
