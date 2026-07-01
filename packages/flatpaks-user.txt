@@ -14,3 +14,4 @@ flathub	org.localsend.localsend_app	stable
 flathub	org.signal.Signal	stable
 flathub	tv.plex.PlexDesktop	stable
 flathub	us.zoom.Zoom	stable
+flathub	md.obsidian.Obsidian	stable
