@@ -1,6 +1,11 @@
 (
     state: Enabled,
+    acceleration: Some((
+        profile: Some(Adaptive),
+        speed: 0.09510535992080327,
+    )),
     click_method: Some(Clickfinger),
+    disable_while_typing: Some(true),
     left_handed: Some(false),
     scroll_config: Some((
         method: Some(TwoFinger),

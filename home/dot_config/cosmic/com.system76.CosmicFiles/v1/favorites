@@ -1,5 +1,5 @@
 [
     Home,
     Downloads,
-    Path("/var/home/stella/Seafile/My Library"),
+    Path("/var/home/stella/Seafile/Documents"),
 ]

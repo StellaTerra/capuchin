@@ -1,3 +1,39 @@
 {
-    "dev.containers.dockerPath": "podman"
+    "dev.containers.dockerPath": "podman",
+    "workbench.startupEditor": "none",
+    "github.copilot.enable": {
+        "*": false,
+        "plaintext": false,
+        "markdown": false,
+        "scminput": false
+    },
+    "workbench.editor.empty.hint": "hidden",
+    "terminal.integrated.initialHint": false,
+    "vim.useSystemClipboard": true,
+    "vim.handleKeys": {
+        "<C-p>": false,
+    },
+    "git.confirmSync": false,
+    "[clojure]": {
+        "diffEditor.ignoreTrimWhitespace": false,
+        "editor.wordSeparators": "\t ()\"':,;~@#$%^&{}[]`",
+        "editor.autoClosingBrackets": "always",
+        "editor.autoClosingOvertype": "always",
+        "editor.autoClosingQuotes": "always",
+        "editor.formatOnType": true,
+        "editor.autoIndent": "full",
+        "editor.formatOnPaste": true,
+        "editor.matchBrackets": "never",
+        "editor.guides.indentation": true,
+        "editor.parameterHints.enabled": false,
+        "editor.unicodeHighlight.allowedCharacters": {
+            " ": true,
+            "꞉": true
+        },
+        "editor.foldingStrategy": "indentation"
+    },
+    "calva.paredit.defaultKeyMap": "strict",
+    "calva.showDocstringInParameterHelp": true,
+    "editor.hover.enabled": "off",
+    "remote.autoForwardPortsSource": "hybrid"
 }
