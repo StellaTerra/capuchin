@@ -1,266 +1,230 @@
 # Capuchin Provisioning
 
-This repository is the rebuild recipe for Capuchin, Stella's laptop. The goal is
-that after wiping the OS and reinstalling the same Fedora COSMIC Atomic base,
-running this repo restores the laptop's host packages, user Flatpaks, Flatpak
-remotes, RPM repositories, and selected home-directory configuration.
+This repository is the rebuild recipe for Stella's Fedora COSMIC Atomic laptop.
+`bootstrap.sh` is idempotent: it installs missing software and managed files
+without deleting unmanaged state.
 
-The provisioning is intentionally conservative and idempotent. It installs
-missing things, applies managed dotfiles, and applies explicitly tracked
-rpm-ostree base package removals, but it does not uninstall layered packages,
-uninstall Flatpaks, or delete unmanaged home files.
+## Managed State
 
-## Layout
+- rpm-ostree packages, removals, RPM repositories, and signing keys
+- Flathub/COSMIC remotes and user Flatpaks
+- VS Code settings and extensions
+- Codex `config.toml`; Codex sessions and history are retained by Borg
+- shell, SSH, WirePlumber, Readaloud, and selected application configuration
+- selected COSMIC settings and five custom wallpapers
+- Borgmatic configuration, service, and timer
+- LocalSend firewall access, Seafile autostart, and MIME associations
+- Keychron udev access and the `marmoset` LAN hosts entry
 
-- `bootstrap.sh`: main provisioning script.
-- `audit.sh`: read-only drift check for packages and Flatpak remotes.
-- `packages/rpm-ostree.txt`: desired rpm-ostree layered packages.
-- `packages/rpm-ostree-base-removals.txt`: base packages intentionally removed
-  with `rpm-ostree override remove`.
-- `packages/flatpaks-user.txt`: desired user Flatpak apps as
-  `remote<TAB>application<TAB>branch`.
-- `repos/rpm-ostree-repos.txt`: repo-release RPMs to layer, currently RPM
-  Fusion free/nonfree.
-- `repos/yum.repos.d/`: external RPM repo files copied into `/etc/yum.repos.d`.
-- `repos/rpm-gpg/`: GPG keys copied into `/etc/pki/rpm-gpg`.
-- `repos/flatpak-remotes-user.txt`: user Flatpak remotes.
-- `system/`: root-owned system files installed by bootstrap.
-- `.chezmoiroot`: tells chezmoi to treat `home/` as the source root.
-- `home/`: chezmoi-managed home-directory state.
-
-## What Bootstrap Does
-
-`./bootstrap.sh` runs these phases in order:
-
-1. Copies managed RPM GPG keys into `/etc/pki/rpm-gpg`.
-2. Copies managed RPM repo files into `/etc/yum.repos.d`.
-3. Installs managed system files for the Borgmatic backup timer.
-4. Enables and starts `borgmatic-marmoset.timer`.
-5. Layers missing repo-release RPMs with `rpm-ostree install`.
-6. Adds missing user Flatpak remotes.
-7. Removes base packages from `packages/rpm-ostree-base-removals.txt` with
-   `rpm-ostree override remove`.
-8. Layers missing packages from `packages/rpm-ostree.txt`.
-9. Installs missing user Flatpak apps from `packages/flatpaks-user.txt`.
-10. Applies home configuration with `chezmoi --source "$ROOT" apply` if
-   `chezmoi` is available in the current boot.
-
-The rpm-ostree comparison prefers a staged deployment when one exists. This
-keeps repeated runs clean after a package has been installed but before the
-machine has rebooted or `rpm-ostree apply-live` has been run.
-
-## What Is Covered
-
-System/package coverage:
-
-- rpm-ostree layered packages, including `chezmoi`, VS Code, 1Password,
-  borg/borgmatic, podman-compose, btop, vim, OpenVPN NetworkManager support,
-  and RPM Fusion codec support.
-- rpm-ostree base package removals required for layered package replacements,
-  currently `libva-intel-media-driver` so RPM Fusion's `intel-media-driver`
-  can be layered.
-- External RPM repos for RPM Fusion, 1Password, and VS Code.
-- System Borgmatic backup service/timer for Marmoset, plus the non-secret
-  Borgmatic config and wrapper script.
-- User Flatpak remotes for Flathub and COSMIC.
-- User Flatpak apps, not runtime dependencies. Flatpak resolves runtimes itself.
-
-Home configuration coverage:
-
-- Shell startup files: `.bashrc`, `.bash_profile`.
-- SSH config for the 1Password SSH agent.
-- VS Code user setting for Podman-backed dev containers.
-- Readaloud user config and user systemd service.
-- WirePlumber audio rules for hidden/internal outputs and friendly device names.
-- btop config.
-- MIME defaults.
-- XDG user directories and locale.
-- Qalculate, Ark, KDE, and Qt theme integration preferences.
-- Autostart entries for 1Password, Discord, and Signal.
-- Curated COSMIC preferences: keyboard/input behavior, shortcuts, tiling/focus,
-  panel composition, compact window controls, file manager preferences, applet
-  preferences, minimon applet layout, and COSMIC system monitor layout.
-- Codex config, excluding auth, sessions, caches, history, sqlite state, skills,
-  packages, and approval rules.
-
-Deliberately not covered:
-
-- Browser profiles and Electron app state.
-- 1Password databases, keyrings, cookies, tokens, and auth files.
-- Codex `auth.json`, sessions, history, sqlite databases, generated skills, and
-  downloaded packages.
-- Flatpak runtime dependencies.
-- COSMIC wallpaper image paths, screenshot rectangle state, and monitor output
-  layout.
-- Downloads, Trash, recent files, application caches, and generated logs.
-- Borg/Marmoset private backup material under `/etc/borg-marmoset`: SSH private
-  key, known_hosts, and repository passphrase.
+Secrets, account sessions, fingerprints, TPM tokens, VPN profiles, printer
+queues, browser profiles, and monitor layout are restored separately.
+`~/Downloads` is disposable, excluded from Borg, and must not contain any
+rebuild-critical state.
 
 ## Rebuilding Capuchin
 
-These steps assume a fresh Fedora COSMIC Atomic install on this laptop.
+1. Install Fedora COSMIC Atomic. During installation, create user `stella`,
+   enable password-based disk encryption, connect Wi-Fi, and set the hostname
+   to `capuchin`. The bootstrap changes Stella's passwd entry to
+   `/home/stella` without moving data; Fedora maps that path to `/var/home`.
 
-1. Complete the base OS installer.
-
-   Use the same Fedora COSMIC Atomic base that this repo was built against.
-   Create the normal `stella` user.
-
-2. Boot into the fresh OS.
-
-   Connect to the network. Open a terminal.
-
-3. Install Git if it is not available.
-
-   On a fresh atomic install, Git is usually present. If it is missing, install
-   it with rpm-ostree and reboot:
+2. Add the 1Password RPM repository and layer 1Password and its CLI:
 
    ```bash
-   rpm-ostree install git
+   curl -fsSL \
+     https://downloads.1password.com/linux/keys/1password.asc \
+     -o /tmp/1password.asc
+   sudo install -Dm644 /tmp/1password.asc \
+     /etc/pki/rpm-gpg/1password.asc
+   sudo tee /etc/yum.repos.d/1password.repo >/dev/null <<'EOF'
+   [1password]
+   name=1Password Stable Channel
+   baseurl=https://downloads.1password.com/linux/rpm/stable/$basearch
+   enabled=1
+   gpgcheck=1
+   repo_gpgcheck=1
+   gpgkey=file:///etc/pki/rpm-gpg/1password.asc
+   EOF
+   rpm-ostree install 1password 1password-cli
    systemctl reboot
    ```
 
-4. Clone this repository.
-
-   The expected local path is:
+3. Sign in to 1Password. Enable its SSH agent and CLI integration under
+   **Settings > Developer**, then verify GitHub access:
 
    ```bash
-   cd /var/home/stella
-   git clone <repo-url> capuchin
+   SSH_AUTH_SOCK="$HOME/.1password/agent.sock" ssh -T git@github.com
+   ```
+
+4. Clone and provision Capuchin:
+
+   ```bash
+   cd /home/stella
+   SSH_AUTH_SOCK="$HOME/.1password/agent.sock" \
+     git clone git@github.com:StellaTerra/capuchin.git
    cd capuchin
-   ```
-
-5. Run the bootstrap.
-
-   ```bash
+   ./bootstrap.sh
+   systemctl reboot
+   cd /home/stella/capuchin
    ./bootstrap.sh
    ```
 
-   The script will install repo files, add Flatpak remotes, install missing
-   rpm-ostree packages, install missing user Flatpaks, and apply chezmoi if it
-   is already available.
-
-6. Reboot if rpm-ostree staged changes.
-
-   If the output says changes were queued for next boot, reboot:
+5. Enroll the encrypted disk with the TPM. First verify the LUKS device with
+   `lsblk -f`; it is currently `/dev/nvme0n1p3`:
 
    ```bash
+   sudo systemd-cryptenroll \
+     --wipe-slot=tpm2 \
+     --tpm2-device=auto \
+     --tpm2-pcrs=7 \
+     /dev/nvme0n1p3
+   sudo rpm-ostree initramfs --enable \
+     --arg=--force-add --arg=tpm2-tss \
+     --arg=-I --arg=/etc/crypttab
    systemctl reboot
    ```
 
-   Alternatively, for simple package additions, you can try:
+6. Clone and install Readaloud:
 
    ```bash
-   sudo rpm-ostree apply-live
+   cd /home/stella
+   git clone git@github.com:StellaTerra/readaloud.git
+   cd readaloud
+   ./install.sh
+   install -Dm755 examples/speak-selection-wayland \
+     /home/stella/.local/bin/speak-selection
    ```
 
-   A reboot is the more reliable path after a full rebuild.
-
-7. Run the bootstrap again after reboot.
+7. Enroll fingerprints:
 
    ```bash
-   cd /var/home/stella/capuchin
-   ./bootstrap.sh
+   fprintd-enroll
+   fprintd-verify
    ```
 
-   This second run should be mostly no-op. It is important because `chezmoi` is
-   installed by rpm-ostree, so home configuration may only be applicable after
-   the first reboot.
-
-8. Verify package drift.
+8. Fetch fresh VPN profiles from their authoritative sources. Create a private
+   staging directory outside `Downloads`:
 
    ```bash
-   ./audit.sh
+   install -d -m 700 /home/stella/.config/vpn
    ```
 
-   A fully matching system reports:
-
-   ```text
-   rpm-ostree layered packages
-     ok: matches repo
-   rpm-ostree base removals
-     ok: matches repo
-   rpm-ostree repo packages
-     ok: matches repo
-   flatpak user remote names
-     ok: matches repo
-   flatpak user apps
-     ok: matches repo
-   ```
-
-9. Sign in to services and restore unmanaged state.
-
-   Some state is intentionally not stored here. Sign in or restore separately
-   for 1Password, browsers, Signal, Discord, Seafile, and any other apps whose
-   secrets or runtime state are not managed by chezmoi.
-
-10. Restore Borg/Marmoset backup secrets.
-
-   The backup service is installed by this repo, but its private material is not
-   tracked. Restore these files before relying on backups:
-
-   ```text
-   /etc/borg-marmoset/ssh_key
-   /etc/borg-marmoset/known_hosts
-   /etc/borg-marmoset/passphrase
-   ```
-
-   Then validate and start the timer:
+   Download a current OpenVPN profile from the PIA account website, place the
+   selected `.ovpn` file at
+   `/home/stella/.config/vpn/pia-france.ovpn`, and import it:
 
    ```bash
-   sudo borgmatic --config /etc/borgmatic/config.yaml config validate
-   systemctl status borgmatic-marmoset.timer --no-pager
-   systemctl status borgmatic-marmoset.service --no-pager
+   chmod 600 /home/stella/.config/vpn/pia-france.ovpn
+   nmcli connection import type openvpn \
+     file /home/stella/.config/vpn/pia-france.ovpn
+   nmcli connection up "PIA - France" --ask
    ```
 
-11. Validate expected workstation behavior.
+   Use the credentials from the 1Password item **Private Internet Access**.
+   Rename the imported connection before bringing it up if NetworkManager chose
+   a different name.
 
-   Suggested checks:
+   While connected to the home network, copy Capuchin's generated WireGuard
+   peer configuration directly from Marmoset and import it:
 
    ```bash
-   chezmoi --source /var/home/stella/capuchin diff
-   systemctl --user status readaloud.service --no-pager
-   systemctl status borgmatic-marmoset.timer --no-pager
-   flatpak list --user --app
-   rpm-ostree status
-   ./audit.sh
+   ssh marmoset \
+     'sudo cat /var/marmoset/vpn/wireguard/peer_capuchin/peer_capuchin.conf' \
+     > /home/stella/.config/vpn/marmoset-capuchin.conf
+   chmod 600 /home/stella/.config/vpn/marmoset-capuchin.conf
+   nmcli connection import type wireguard \
+     file /home/stella/.config/vpn/marmoset-capuchin.conf
+   nmcli connection show
    ```
+
+   NetworkManager keeps its own imported copies. Remove the staging files after
+   both connections work:
+
+   ```bash
+   rm /home/stella/.config/vpn/pia-france.ovpn \
+      /home/stella/.config/vpn/marmoset-capuchin.conf
+   rmdir /home/stella/.config/vpn
+   ```
+
+9. Build Codex Desktop in an Ubuntu toolbox so its compiler and build
+   dependencies do not need to be layered onto the Atomic host. Install the
+   project's user-local integration; an AppImage build is not needed:
+
+   ```bash
+   cd /home/stella
+   git clone https://github.com/ilysenko/codex-desktop-linux.git
+   cd codex-desktop-linux
+   toolbox create --distro ubuntu --release 26.04 ubuntu-toolbox-26.04
+   toolbox run --container ubuntu-toolbox-26.04 \
+     bash -lc 'cd /home/stella/codex-desktop-linux && bash scripts/install-deps.sh'
+   ./contrib/user-local-install/install-user-local.sh
+   toolbox run --container ubuntu-toolbox-26.04 \
+     bash -lc '/home/stella/.local/bin/codex-desktop-update --force'
+   ```
+
+10. Restore the Borg credentials from their 1Password item. Substitute that
+    item's vault and title in these references if necessary:
+
+    ```bash
+    sudo install -d -o root -g root -m 0700 /etc/borg-marmoset
+    op read 'op://Private/Marmoset Borg Capuchin/private key' | \
+      sudo install -o root -g root -m 0600 /dev/stdin /etc/borg-marmoset/ssh_key
+    op read 'op://Private/Marmoset Borg Capuchin/public key' | \
+      sudo install -o root -g root -m 0644 /dev/stdin /etc/borg-marmoset/ssh_key.pub
+    op read 'op://Private/Marmoset Borg Capuchin/Repo Encryption Passphrase' | \
+      sudo install -o root -g root -m 0600 /dev/stdin /etc/borg-marmoset/passphrase
+    ssh-keyscan -t ed25519 marmoset | \
+      sudo install -o root -g root -m 0644 /dev/stdin /etc/borg-marmoset/known_hosts
+    ```
+
+    Validate file ownership and modes, Borg's configuration, and access to the
+    latest archive. The directory should be `root:root 700`; the private key
+    and passphrase `root:root 600`; and the public key and known-hosts file
+    `root:root 644`. The final command should list `etc/passwd`:
+
+    ```bash
+    sudo stat -c '%U:%G %a %n' /etc/borg-marmoset /etc/borg-marmoset/*
+    sudo borgmatic --config /etc/borgmatic/config.yaml config validate
+    sudo borgmatic --config /etc/borgmatic/config.yaml \
+      list --archive latest --path etc/passwd --short
+    ```
+
+    Codex transcripts live under `~/.codex/sessions` and are backed up. To
+    restore local task history before launching Codex:
+
+    ```bash
+    sudo borgmatic --config /etc/borgmatic/config.yaml \
+      extract --archive latest --path var/home/stella/.codex --destination /
+    sudo chown -R stella:stella /home/stella/.codex
+    ```
+
+    Finally, verify the workstation and run one backup:
+
+    ```bash
+    cd /home/stella/capuchin
+    ./audit.sh
+    chezmoi --source /home/stella/capuchin diff
+    code --list-extensions
+    readaloud doctor
+    sudo systemctl start borgmatic-marmoset.service
+    systemctl status borgmatic-marmoset.service --no-pager
+    ```
 
 ## Day-To-Day Maintenance
 
-When adding a new rpm-ostree package intentionally:
-
-1. Install it normally, or add it to `packages/rpm-ostree.txt` first.
-2. Run `./bootstrap.sh`.
-3. Run `./audit.sh`.
-4. Commit the package-list change.
-
-When removing a base rpm-ostree package intentionally:
-
-1. Add it to `packages/rpm-ostree-base-removals.txt`.
-2. Run `./bootstrap.sh`.
-3. Run `./audit.sh`.
-4. Commit the package-list change.
-
-When adding a new user Flatpak intentionally:
-
-1. Install the Flatpak.
-2. Add a line to `packages/flatpaks-user.txt` with its remote, application ID,
-   and branch.
-3. Run `./audit.sh`.
-4. Commit the package-list change.
-
-When changing home configuration intentionally:
+Update the appropriate file under `packages/` when packages, Flatpaks, or VS
+Code extensions change. Add home configuration through chezmoi:
 
 ```bash
-chezmoi --source /var/home/stella/capuchin add <path>
-chezmoi --source /var/home/stella/capuchin diff
+chezmoi --source /home/stella/capuchin add <path>
+chezmoi --source /home/stella/capuchin diff
 git diff
 git add home
 git commit
 ```
 
-Be selective. Do not add app databases, auth files, browser profiles, keyrings,
-downloaded caches, or generated logs.
+Then run `./bootstrap.sh` and `./audit.sh`. Do not add app databases, auth
+files, browser profiles, keyrings, caches, or logs.
 
 ## Drift Auditing
 
@@ -270,14 +234,5 @@ reports both directions:
 - `missing from system`: tracked in the repo but absent on the machine.
 - `extra on system`: present on the machine but absent from the repo.
 
-An extra item is not automatically bad. It means the machine has drifted from
-the declared recipe and the item should either be added to the repo or removed
-manually.
-
-## Current Limits
-
-This repo does not yet provision every possible part of the laptop. In
-particular, it does not restore private application data, service logins,
-browser profiles, monitor layout, wallpaper image assets, or large local project
-checkouts. Those are either intentionally excluded for safety or should be
-handled by a future dedicated backup/restore layer.
+An extra item is not automatically bad; it identifies state that is not in the
+declared recipe.

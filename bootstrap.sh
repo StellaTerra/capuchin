@@ -5,11 +5,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RPM_OSTREE_PACKAGES="$ROOT/packages/rpm-ostree.txt"
 RPM_OSTREE_BASE_REMOVALS="$ROOT/packages/rpm-ostree-base-removals.txt"
 USER_FLATPAKS="$ROOT/packages/flatpaks-user.txt"
+VSCODE_EXTENSIONS="$ROOT/packages/vscode-extensions.txt"
 RPM_OSTREE_REPOS="$ROOT/repos/rpm-ostree-repos.txt"
 RPM_REPO_FILES_DIR="$ROOT/repos/yum.repos.d"
 RPM_GPG_DIR="$ROOT/repos/rpm-gpg"
 USER_FLATPAK_REMOTES="$ROOT/repos/flatpak-remotes-user.txt"
 SYSTEM_FILES_DIR="$ROOT/system"
+FIREWALL_PORTS="$ROOT/system/firewalld-ports.txt"
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -79,12 +81,24 @@ install_rpm_repo_files() {
 
 install_system_files() {
   need_cmd cmp
+  need_cmd grep
   need_cmd install
+  need_cmd tee
 
   install_if_changed "$SYSTEM_FILES_DIR/etc/borgmatic/config.yaml" "/etc/borgmatic/config.yaml" 0600
   install_if_changed "$SYSTEM_FILES_DIR/etc/systemd/system/borgmatic-marmoset.service" "/etc/systemd/system/borgmatic-marmoset.service" 0644
   install_if_changed "$SYSTEM_FILES_DIR/etc/systemd/system/borgmatic-marmoset.timer" "/etc/systemd/system/borgmatic-marmoset.timer" 0644
+  install_if_changed "$SYSTEM_FILES_DIR/etc/udev/rules.d/50-keychron.rules" "/etc/udev/rules.d/50-keychron.rules" 0644
   install_if_changed "$SYSTEM_FILES_DIR/usr/local/sbin/borgmatic-marmoset-backup" "/usr/local/sbin/borgmatic-marmoset-backup" 0755
+
+  local hosts_entry
+  while IFS= read -r hosts_entry; do
+    [[ -n "$hosts_entry" && "$hosts_entry" != \#* ]] || continue
+    if ! as_root grep -Fqx "$hosts_entry" /etc/hosts; then
+      printf 'system: adding /etc/hosts entry: %s\n' "$hosts_entry"
+      printf '%s\n' "$hosts_entry" | as_root tee -a /etc/hosts >/dev/null
+    fi
+  done <"$SYSTEM_FILES_DIR/etc/hosts.entries"
 
   if command -v systemctl >/dev/null 2>&1; then
     as_root systemctl daemon-reload
@@ -96,6 +110,46 @@ install_system_files() {
       printf 'borgmatic: missing secret file %s; restore it before backups can run\n' "$file"
     fi
   done
+}
+
+normalize_home_directory() {
+  need_cmd getent
+  need_cmd usermod
+
+  local user="stella"
+  local expected_home="/home/stella"
+  local current_home
+  current_home="$(getent passwd "$user" | cut -d: -f6)"
+  [[ -n "$current_home" ]] || die "user $user does not exist"
+
+  if [[ "$current_home" == "$expected_home" ]]; then
+    printf 'account: %s home is already %s\n' "$user" "$expected_home"
+    return
+  fi
+
+  [[ -d "$expected_home" ]] || die "$expected_home does not exist; refusing to change $user home"
+  printf 'account: setting %s home to %s without moving files\n' "$user" "$expected_home"
+  as_root usermod --home "$expected_home" "$user"
+}
+
+configure_firewall_ports() {
+  need_cmd firewall-cmd
+
+  local changed=0
+  local port
+  while IFS= read -r port; do
+    [[ -n "$port" && "$port" != \#* ]] || continue
+    if as_root firewall-cmd --permanent --zone=public --query-port="$port" >/dev/null; then
+      continue
+    fi
+    printf 'firewall: allowing %s in public zone\n' "$port"
+    as_root firewall-cmd --permanent --zone=public --add-port="$port"
+    changed=1
+  done <"$FIREWALL_PORTS"
+
+  if ((changed)); then
+    as_root firewall-cmd --reload
+  fi
 }
 
 install_rpm_ostree_repo_packages() {
@@ -271,6 +325,32 @@ install_missing_user_flatpaks() {
   done
 }
 
+install_missing_vscode_extensions() {
+  if ! command -v code >/dev/null 2>&1; then
+    printf 'vscode: not available in this boot; rerun after reboot\n'
+    return
+  fi
+
+  mapfile -t wanted < <(read_list "$VSCODE_EXTENSIONS" | sort -u)
+  mapfile -t installed < <(code --list-extensions | sort -u)
+  mapfile -t missing < <(
+    comm -23 \
+      <(printf '%s\n' "${wanted[@]}" | sort -u) \
+      <(printf '%s\n' "${installed[@]}" | sort -u)
+  )
+
+  if ((${#missing[@]} == 0)); then
+    printf 'vscode: all requested extensions are already installed\n'
+    return
+  fi
+
+  local extension
+  for extension in "${missing[@]}"; do
+    printf 'vscode: installing extension %s\n' "$extension"
+    code --install-extension "$extension"
+  done
+}
+
 apply_home_config() {
   if ! command -v chezmoi >/dev/null 2>&1; then
     printf 'chezmoi: not available in this boot; rerun after rpm-ostree apply-live or reboot\n'
@@ -282,13 +362,16 @@ apply_home_config() {
 }
 
 main() {
+  normalize_home_directory
   install_rpm_repo_files
   install_system_files
+  configure_firewall_ports
   install_rpm_ostree_repo_packages
   ensure_flatpak_user_remotes
   remove_base_rpm_ostree_packages
   install_missing_rpm_ostree_packages
   install_missing_user_flatpaks
+  install_missing_vscode_extensions
   apply_home_config
 }
 

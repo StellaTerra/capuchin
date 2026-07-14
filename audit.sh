@@ -6,8 +6,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RPM_OSTREE_PACKAGES="$ROOT/packages/rpm-ostree.txt"
 RPM_OSTREE_BASE_REMOVALS="$ROOT/packages/rpm-ostree-base-removals.txt"
 USER_FLATPAKS="$ROOT/packages/flatpaks-user.txt"
+VSCODE_EXTENSIONS="$ROOT/packages/vscode-extensions.txt"
 RPM_OSTREE_REPOS="$ROOT/repos/rpm-ostree-repos.txt"
 USER_FLATPAK_REMOTES="$ROOT/repos/flatpak-remotes-user.txt"
+FIREWALL_PORTS="$ROOT/system/firewalld-ports.txt"
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -204,12 +206,58 @@ audit_flatpaks() {
   rm -f "$expected" "$actual"
 }
 
+audit_vscode_extensions() {
+  need_cmd code
+
+  local expected actual
+  expected="$(mktemp)"
+  actual="$(mktemp)"
+
+  read_list "$VSCODE_EXTENSIONS" | sort -u >"$expected"
+  code --list-extensions | sort -u >"$actual"
+
+  print_diff 'VS Code extensions' "$expected" "$actual"
+  rm -f "$expected" "$actual"
+}
+
+audit_firewall_ports() {
+  need_cmd firewall-cmd
+
+  local expected actual
+  expected="$(mktemp)"
+  actual="$(mktemp)"
+
+  read_list "$FIREWALL_PORTS" | sort -u >"$expected"
+  firewall-cmd --permanent --zone=public --list-ports |
+    tr ' ' '\n' | sed '/^$/d' | sort -u >"$actual"
+
+  print_diff 'firewalld public-zone ports' "$expected" "$actual"
+  rm -f "$expected" "$actual"
+}
+
+audit_home_directory() {
+  need_cmd getent
+
+  local expected actual
+  expected="$(mktemp)"
+  actual="$(mktemp)"
+
+  printf '/home/stella\n' >"$expected"
+  getent passwd stella | cut -d: -f6 >"$actual"
+
+  print_diff 'stella passwd home' "$expected" "$actual"
+  rm -f "$expected" "$actual"
+}
+
 main() {
   audit_rpm_ostree_packages
   audit_rpm_ostree_base_removals
   audit_rpm_ostree_repo_packages
   audit_flatpak_remotes
   audit_flatpaks
+  audit_vscode_extensions
+  audit_firewall_ports
+  audit_home_directory
 }
 
 main "$@"
