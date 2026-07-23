@@ -23,9 +23,4 @@ if [ -d ~/.bashrc.d ]; then
     done
 fi
 unset rc
-
-# Fix COSMIC Atomic /var/home pathing mismatch
-if [ "$PWD" = "/var/home/$USER" ]; then
-    cd
-fi
-
+. "$HOME/.cargo/env"

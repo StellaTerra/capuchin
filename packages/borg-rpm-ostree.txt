@@ -1,0 +1,2 @@
+# Borg runs as a system service and intentionally uses the host package.
+borgmatic

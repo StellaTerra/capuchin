@@ -1,0 +1,46 @@
+{
+    "workbench.secondarySideBar.defaultVisibility": "hidden",
+    "calva.paredit.defaultKeyMap": "strict",
+    "editor.minimap.enabled": false,
+    "containers.containerClient": "com.microsoft.visualstudio.containers.docker",
+    "containers.orchestratorClient": "com.microsoft.visualstudio.orchestrators.dockercompose",
+    "workbench.startupEditor": "none",
+    "github.copilot.enable": {
+        "*": false,
+        "plaintext": false,
+        "markdown": false,
+        "scminput": false
+    },
+    "workbench.editor.empty.hint": "hidden",
+    "terminal.integrated.initialHint": false,
+    "vim.useSystemClipboard": true,
+    "vim.handleKeys": {
+        "<C-p>": false,
+        "<C-w>": false,
+        "<C-b>": false,
+    },
+    "git.confirmSync": false,
+    "[clojure]": {
+        "diffEditor.ignoreTrimWhitespace": false,
+        "editor.wordSeparators": "\t ()\"':,;~@#$%^&{}[]`",
+        "editor.autoClosingBrackets": "always",
+        "editor.autoClosingOvertype": "always",
+        "editor.autoClosingQuotes": "always",
+        // "editor.formatOnType": true,
+        "editor.autoIndent": "full",
+        // "editor.formatOnPaste": true,
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "betterthantomorrow.calva",
+        "editor.guides.indentation": true,
+        "editor.parameterHints.enabled": false,
+        "editor.unicodeHighlight.allowedCharacters": {
+            " ": true,
+            "꞉": true
+        },
+        "editor.foldingStrategy": "indentation"
+    },
+    "calva.showDocstringInParameterHelp": true,
+    "editor.hover.enabled": "off",
+    "remote.autoForwardPortsSource": "hybrid",
+    "editor.accessibilitySupport": "off"
+}

@@ -1,0 +1,13 @@
+[Annotations]
+annotationToolType=11
+textFontColor=255,0,4
+
+[ImageSave]
+translatedScreenshotsFolder=Screenshots
+
+[VideoSave]
+translatedScreencastsFolder=Screencasts
+
+[ViewerWindow]
+2 screens: Height=941
+2 screens: Width=1342

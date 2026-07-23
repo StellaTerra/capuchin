@@ -1,0 +1,14 @@
+# Native packages installed and versioned by Toshy's installer.
+# Bootstrap does not install these; audit accepts them as intentional layering.
+cairo-devel
+cairo-gobject-devel
+dbus-devel
+gobject-introspection-devel
+libinput-utils
+libxkbcommon-devel
+python3-devel
+python3-pip
+python3-tkinter
+systemd-devel
+wayland-devel
+zenity

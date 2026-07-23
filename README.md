@@ -1,32 +1,56 @@
 # Capuchin Provisioning
 
-This repository is the rebuild recipe for Stella's Fedora COSMIC Atomic laptop.
-`bootstrap.sh` is idempotent: it installs missing software and managed files
-without deleting unmanaged state.
+This repository is the rebuild recipe for Stella's Aurora-DX laptop. The
+bootstrap is idempotent: it installs missing software and managed files without
+deleting unmanaged system state.
 
 ## Managed State
 
-- rpm-ostree packages, removals, RPM repositories, and signing keys
-- Flathub/COSMIC remotes and user Flatpaks
-- VS Code settings and extensions
-- Codex `config.toml`; Codex sessions and history are retained by Borg
-- shell, SSH, WirePlumber, Readaloud, and selected application configuration
-- selected COSMIC settings and five custom wallpapers
+- explicitly layered RPM packages and the 1Password RPM repository
+- Homebrew formulae and personal system-scoped Flatpaks declared in `Brewfile`
+- VS Code extensions
+- VS Code, Toshy, shell, SSH, Readaloud, and selected application configuration
+- selected KDE Plasma settings, the thermal-monitor plasmoid, and five wallpapers
+- device-specific WirePlumber workarounds for the Kanto ORA speakers
 - Borgmatic configuration, service, and timer
-- LocalSend firewall access, Seafile autostart, and MIME associations
-- Keychron udev access and the `marmoset` LAN hosts entry
+- Seafile/application autostart, MIME associations, and the `marmoset` hosts entry
 
-Secrets, account sessions, fingerprints, TPM tokens, VPN profiles, printer
-queues, browser profiles, and monitor layout are restored separately.
-`~/Downloads` is disposable, excluded from Borg, and must not contain any
+Toshy chooses and layers its own native dependencies. They are listed in
+`packages/rpm-ostree-allowed.txt` so drift auditing recognizes them without
+bootstrap trying to install or version them.
+
+Aurora manages graphical applications system-wide through Bazaar and Brewfile
+`flatpak` entries. Aurora's default Flatpaks remain owned by Aurora; this repo's
+`Brewfile` declares only Stella's personal additions. Secrets, account
+sessions, fingerprints, TPM tokens, VPN profiles, printer queues, browser
+profiles, monitor layout, wallets, and mutable application databases are
+restored separately.
+`~/Downloads` is disposable, excluded from Borg, and must not contain
 rebuild-critical state.
+
+## Bootstrap Scopes
+
+```bash
+./bootstrap.sh packages  # RPM layering, Brew, system Flatpaks, VS Code extensions
+./bootstrap.sh home      # apply the Chezmoi source
+./bootstrap.sh borg      # Borg package, config, service, and timer
+./bootstrap.sh all       # all scopes; also the default with no argument
+```
+
+The scopes make it possible to provision Borg without touching the desktop.
+The `home` scope intentionally performs the normal Chezmoi apply. During
+development, preview and review changes in small batches before invoking it.
 
 ## Rebuilding Capuchin
 
-1. Install Fedora COSMIC Atomic. During installation, create user `stella`,
+1. Install the Aurora-DX image. During installation, create user `stella`,
    enable password-based disk encryption, connect Wi-Fi, and set the hostname
-   to `capuchin`. The bootstrap changes Stella's passwd entry to
-   `/home/stella` without moving data; Fedora maps that path to `/var/home`.
+   to `capuchin`. Aurora-DX can be installed directly; if standard Aurora was
+   installed instead, use `ujust devmode` to switch to the Developer
+   Experience image.
+
+   Aurora records the account home as `/var/home/stella`; `/home/stella` is
+   the corresponding compatibility path on the Atomic filesystem.
 
 2. Add the 1Password RPM repository and layer 1Password and its CLI:
 
@@ -56,35 +80,54 @@ rebuild-critical state.
    SSH_AUTH_SOCK="$HOME/.1password/agent.sock" ssh -T git@github.com
    ```
 
-4. Clone and provision Capuchin:
+4. Clone Capuchin:
 
    ```bash
    cd /home/stella
    SSH_AUTH_SOCK="$HOME/.1password/agent.sock" \
      git clone git@github.com:StellaTerra/capuchin.git
    cd capuchin
-   ./bootstrap.sh
-   systemctl reboot
-   cd /home/stella/capuchin
-   ./bootstrap.sh
    ```
 
-5. Enroll the encrypted disk with the TPM. First verify the LUKS device with
-   `lsblk -f`; it is currently `/dev/nvme0n1p3`:
+5. Install Toshy before applying the managed home configuration. Download the
+   current Toshy source from its upstream repository and run its standard
+   installer:
 
    ```bash
-   sudo systemd-cryptenroll \
-     --wipe-slot=tpm2 \
-     --tpm2-device=auto \
-     --tpm2-pcrs=7 \
-     /dev/nvme0n1p3
-   sudo rpm-ostree initramfs --enable \
-     --arg=--force-add --arg=tpm2-tss \
-     --arg=-I --arg=/etc/crypttab
+   cd /home/stella
+   git clone https://github.com/RedBearAK/Toshy.git
+   cd Toshy
+   ./setup_toshy.py install
    systemctl reboot
    ```
 
-6. Clone and install Readaloud:
+   Toshy owns its virtual environment, native dependency choices, user
+   services, helper scripts, KWin integration, and preferences database.
+   Chezmoi owns only `~/.config/toshy/toshy_config.py`, including the Keychron,
+   VS Code, and terminal overrides in Toshy's protected editable slices.
+
+6. Provision packages and home configuration. A Toshy installation may stage
+   an rpm-ostree deployment; reboot first when requested.
+
+   ```bash
+   cd /home/stella/capuchin
+   ./bootstrap.sh packages
+   systemctl reboot
+   cd /home/stella/capuchin
+   ./bootstrap.sh packages
+   ./bootstrap.sh home
+   ```
+
+7. Enroll the encrypted disk with the TPM using Aurora's supported recipe.
+   Preview it first, then follow the interactive prompts:
+
+   ```bash
+   ujust -n toggle-tpm2
+   ujust toggle-tpm2
+   systemctl reboot
+   ```
+
+8. Clone and install Readaloud:
 
    ```bash
    cd /home/stella
@@ -95,75 +138,71 @@ rebuild-critical state.
      /home/stella/.local/bin/speak-selection
    ```
 
-7. Enroll fingerprints:
+9. Enroll fingerprints in **System Settings > Users > Configure Fingerprint
+   Authentication**. Lock the session and confirm fingerprint authentication.
+   For command-line diagnostics, `fprintd-verify` remains available.
 
-   ```bash
-   fprintd-enroll
-   fprintd-verify
-   ```
+10. Fetch fresh VPN profiles from their authoritative sources. Create a private
+    staging directory outside `Downloads`:
 
-8. Fetch fresh VPN profiles from their authoritative sources. Create a private
-   staging directory outside `Downloads`:
+    ```bash
+    install -d -m 700 /home/stella/.config/vpn
+    ```
 
-   ```bash
-   install -d -m 700 /home/stella/.config/vpn
-   ```
+    Download a current OpenVPN profile from the PIA account website, place it
+    at `/home/stella/.config/vpn/pia-france.ovpn`, and import it:
 
-   Download a current OpenVPN profile from the PIA account website, place the
-   selected `.ovpn` file at
-   `/home/stella/.config/vpn/pia-france.ovpn`, and import it:
+    ```bash
+    chmod 600 /home/stella/.config/vpn/pia-france.ovpn
+    nmcli connection import type openvpn \
+      file /home/stella/.config/vpn/pia-france.ovpn
+    nmcli connection up "PIA - France" --ask
+    ```
 
-   ```bash
-   chmod 600 /home/stella/.config/vpn/pia-france.ovpn
-   nmcli connection import type openvpn \
-     file /home/stella/.config/vpn/pia-france.ovpn
-   nmcli connection up "PIA - France" --ask
-   ```
+    Use the credentials from the 1Password item **Private Internet Access**.
+    Rename the imported connection before bringing it up if NetworkManager
+    chose a different name.
 
-   Use the credentials from the 1Password item **Private Internet Access**.
-   Rename the imported connection before bringing it up if NetworkManager chose
-   a different name.
+    While connected to the home network, copy Capuchin's generated WireGuard
+    peer configuration directly from Marmoset and import it:
 
-   While connected to the home network, copy Capuchin's generated WireGuard
-   peer configuration directly from Marmoset and import it:
+    ```bash
+    ssh marmoset \
+      'sudo cat /var/marmoset/vpn/wireguard/peer_capuchin/peer_capuchin.conf' \
+      > /home/stella/.config/vpn/marmoset-capuchin.conf
+    chmod 600 /home/stella/.config/vpn/marmoset-capuchin.conf
+    nmcli connection import type wireguard \
+      file /home/stella/.config/vpn/marmoset-capuchin.conf
+    nmcli connection show
+    ```
 
-   ```bash
-   ssh marmoset \
-     'sudo cat /var/marmoset/vpn/wireguard/peer_capuchin/peer_capuchin.conf' \
-     > /home/stella/.config/vpn/marmoset-capuchin.conf
-   chmod 600 /home/stella/.config/vpn/marmoset-capuchin.conf
-   nmcli connection import type wireguard \
-     file /home/stella/.config/vpn/marmoset-capuchin.conf
-   nmcli connection show
-   ```
+    NetworkManager keeps its own imported copies. Remove the staging files
+    after both connections work:
 
-   NetworkManager keeps its own imported copies. Remove the staging files after
-   both connections work:
+    ```bash
+    rm /home/stella/.config/vpn/pia-france.ovpn \
+       /home/stella/.config/vpn/marmoset-capuchin.conf
+    rmdir /home/stella/.config/vpn
+    ```
 
-   ```bash
-   rm /home/stella/.config/vpn/pia-france.ovpn \
-      /home/stella/.config/vpn/marmoset-capuchin.conf
-   rmdir /home/stella/.config/vpn
-   ```
+11. Build Codex Desktop in an Ubuntu toolbox so compiler and build dependencies
+    stay off the Atomic host. Install the project's user-local integration; an
+    AppImage build is not needed:
 
-9. Build Codex Desktop in an Ubuntu toolbox so its compiler and build
-   dependencies do not need to be layered onto the Atomic host. Install the
-   project's user-local integration; an AppImage build is not needed:
+    ```bash
+    cd /home/stella
+    git clone https://github.com/ilysenko/codex-desktop-linux.git
+    cd codex-desktop-linux
+    toolbox create --distro ubuntu --release 26.04 ubuntu-toolbox-26.04
+    toolbox run --container ubuntu-toolbox-26.04 \
+      bash -lc 'cd /home/stella/codex-desktop-linux && bash scripts/install-deps.sh'
+    ./contrib/user-local-install/install-user-local.sh
+    toolbox run --container ubuntu-toolbox-26.04 \
+      bash -lc '/home/stella/.local/bin/codex-desktop-update --force'
+    ```
 
-   ```bash
-   cd /home/stella
-   git clone https://github.com/ilysenko/codex-desktop-linux.git
-   cd codex-desktop-linux
-   toolbox create --distro ubuntu --release 26.04 ubuntu-toolbox-26.04
-   toolbox run --container ubuntu-toolbox-26.04 \
-     bash -lc 'cd /home/stella/codex-desktop-linux && bash scripts/install-deps.sh'
-   ./contrib/user-local-install/install-user-local.sh
-   toolbox run --container ubuntu-toolbox-26.04 \
-     bash -lc '/home/stella/.local/bin/codex-desktop-update --force'
-   ```
-
-10. Restore the Borg credentials from their 1Password item. Substitute that
-    item's vault and title in these references if necessary:
+12. Restore the Borg credentials from their 1Password item. Substitute that
+    item's vault and title if necessary:
 
     ```bash
     sudo install -d -o root -g root -m 0700 /etc/borg-marmoset
@@ -177,12 +216,13 @@ rebuild-critical state.
       sudo install -o root -g root -m 0644 /dev/stdin /etc/borg-marmoset/known_hosts
     ```
 
-    Validate file ownership and modes, Borg's configuration, and access to the
-    latest archive. The directory should be `root:root 700`; the private key
-    and passphrase `root:root 600`; and the public key and known-hosts file
-    `root:root 644`. The final command should list `etc/passwd`:
+    Deploy only the Borg scope, then validate ownership, configuration, and
+    repository access. The directory should be `root:root 700`; the private
+    key and passphrase `600`; and the public key and known-hosts file `644`.
 
     ```bash
+    cd /home/stella/capuchin
+    ./bootstrap.sh borg
     sudo stat -c '%U:%G %a %n' /etc/borg-marmoset /etc/borg-marmoset/*
     sudo borgmatic --config /etc/borgmatic/config.yaml config validate
     sudo borgmatic --config /etc/borgmatic/config.yaml \
@@ -190,7 +230,7 @@ rebuild-critical state.
     ```
 
     Codex transcripts live under `~/.codex/sessions` and are backed up. To
-    restore local task history before launching Codex:
+    restore task history before launching Codex:
 
     ```bash
     sudo borgmatic --config /etc/borgmatic/config.yaml \
@@ -198,41 +238,74 @@ rebuild-critical state.
     sudo chown -R stella:stella /home/stella/.codex
     ```
 
-    Finally, verify the workstation and run one backup:
+    Finally, audit the workstation and run one backup:
 
     ```bash
     cd /home/stella/capuchin
     ./audit.sh
     chezmoi --source /home/stella/capuchin diff
     code --list-extensions
+    toshy-services-status
     readaloud doctor
     sudo systemctl start borgmatic-marmoset.service
     systemctl status borgmatic-marmoset.service --no-pager
     ```
 
+## Device Notes
+
+Aurora provides the system Flathub remote and its application-management tools
+use that installation. Bootstrap validates and consumes it through `Brewfile`;
+it does not create a separate user remote or duplicate applications per-user.
+
+Aurora's default `FedoraWorkstation` firewalld zone permits high TCP and UDP
+ports, including LocalSend's port 53317. Do not add a special rule unless
+LocalSend stops working and the active zone no longer permits that port.
+
+Aurora ships `/usr/lib/udev/rules.d/92-viia.rules`, which grants the hidraw
+access needed by the Keychron keyboard. A repo-owned Keychron rule is not
+needed while that hardware enablement remains present.
+
+The Kanto ORA reports an unusable ALSA dB curve, so
+`51-kanto-ora-volume.conf` tells WirePlumber to ignore it. The ORA and Fractal
+Scape dongle also share a nested full-speed USB hub; forcing S16LE/48 kHz keeps
+their combined isochronous bandwidth schedulable. Re-test the second rule if
+the devices move to independent USB paths.
+
 ## Day-To-Day Maintenance
 
-Update the appropriate file under `packages/` when packages, Flatpaks, or VS
-Code extensions change. Add home configuration through chezmoi:
+Update `Brewfile` for Brew formulae and personal Flatpaks, or the appropriate
+file under `packages/` for other software. Add home configuration through
+Chezmoi in small reviewed batches:
 
 ```bash
 chezmoi --source /home/stella/capuchin add <path>
-chezmoi --source /home/stella/capuchin diff
-git diff
-git add home
-git commit
+chezmoi --source /home/stella/capuchin diff <path>
+git diff -- home
+chezmoi --source /home/stella/capuchin apply --dry-run --verbose <path>
+chezmoi --source /home/stella/capuchin apply <path>
 ```
 
-Then run `./bootstrap.sh` and `./audit.sh`. Do not add app databases, auth
-files, browser profiles, keyrings, caches, or logs.
+Before a full home apply:
+
+```bash
+chezmoi --source /home/stella/capuchin status
+chezmoi --source /home/stella/capuchin diff
+./bootstrap.sh home
+```
+
+Do not add monitor layout, app databases, authentication files, browser
+profiles, keyrings, caches, logs, Toshy's virtual environment, or its SQLite
+preferences database.
 
 ## Drift Auditing
 
-`./audit.sh` is read-only. It compares the repo against the current system and
-reports both directions:
+`./audit.sh` is read-only. It compares managed state with the current system:
 
 - `missing from system`: tracked in the repo but absent on the machine.
-- `extra on system`: present on the machine but absent from the repo.
+- `extra on system`: directly requested state absent from the repo.
 
+Toshy-owned layered packages are accepted through
+`packages/rpm-ostree-allowed.txt`. The Flatpak audit checks only that personal
+additions from this repo are present; Aurora's own defaults are expected extras.
 An extra item is not automatically bad; it identifies state that is not in the
 declared recipe.

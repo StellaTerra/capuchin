@@ -4,12 +4,10 @@ export LC_ALL=C
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RPM_OSTREE_PACKAGES="$ROOT/packages/rpm-ostree.txt"
-RPM_OSTREE_BASE_REMOVALS="$ROOT/packages/rpm-ostree-base-removals.txt"
-USER_FLATPAKS="$ROOT/packages/flatpaks-user.txt"
+BORGMATIC_RPM_OSTREE_PACKAGES="$ROOT/packages/borg-rpm-ostree.txt"
+RPM_OSTREE_ALLOWED="$ROOT/packages/rpm-ostree-allowed.txt"
 VSCODE_EXTENSIONS="$ROOT/packages/vscode-extensions.txt"
-RPM_OSTREE_REPOS="$ROOT/repos/rpm-ostree-repos.txt"
-USER_FLATPAK_REMOTES="$ROOT/repos/flatpak-remotes-user.txt"
-FIREWALL_PORTS="$ROOT/system/firewalld-ports.txt"
+BREWFILE="$ROOT/Brewfile"
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -63,10 +61,6 @@ print_diff() {
   rm -f "$expected_sorted" "$actual_sorted" "$missing_file" "$extra_file"
 }
 
-expected_rpm_ostree_repo_packages() {
-  awk '{ print $1 }' < <(read_list "$RPM_OSTREE_REPOS") | sort -u
-}
-
 rpm_ostree_target_json() {
   local status_json
   status_json="$(rpm-ostree status --json)"
@@ -97,41 +91,6 @@ for package in sorted(set(target.get("requested-packages", []))):
 '
 }
 
-actual_rpm_ostree_base_removals() {
-  rpm_ostree_target_json | python3 -c '
-import json
-import sys
-
-target = json.load(sys.stdin)
-for package in sorted(set(target.get("requested-base-removals", []))):
-    print(package)
-'
-}
-
-actual_rpm_ostree_repo_packages() {
-  local package
-  rpm_ostree_target_json | python3 -c '
-import json
-import sys
-
-target = json.load(sys.stdin)
-for package in target.get("requested-local-packages", []):
-    print(package)
-' | while read -r package; do
-    rpm -q --queryformat '%{NAME}\n' "$package"
-  done | sort -u
-}
-
-actual_flatpak_user_remotes() {
-  flatpak remotes --user --columns=name | sort -u
-}
-
-actual_user_flatpaks() {
-  flatpak list --user --app --columns=origin,application,branch |
-    awk -F '\t' 'NF >= 3 { print $1 "\t" $2 "\t" $3 }' |
-    sort -u
-}
-
 audit_rpm_ostree_packages() {
   need_cmd rpm-ostree
   need_cmd python3
@@ -140,70 +99,55 @@ audit_rpm_ostree_packages() {
   expected="$(mktemp)"
   actual="$(mktemp)"
 
-  read_list "$RPM_OSTREE_PACKAGES" | sort -u >"$expected"
-  actual_rpm_ostree_layered_packages >"$actual"
+  {
+    read_list "$RPM_OSTREE_PACKAGES"
+    read_list "$BORGMATIC_RPM_OSTREE_PACKAGES"
+  } | sort -u >"$expected"
+  comm -23 \
+    <(actual_rpm_ostree_layered_packages | sort -u) \
+    <(read_list "$RPM_OSTREE_ALLOWED" | sort -u) >"$actual"
 
-  print_diff 'rpm-ostree layered packages' "$expected" "$actual"
+  print_diff 'rpm-ostree managed packages (Toshy-owned layering allowed)' "$expected" "$actual"
   rm -f "$expected" "$actual"
 }
 
-audit_rpm_ostree_base_removals() {
-  need_cmd rpm-ostree
-  need_cmd python3
-
-  local expected actual
-  expected="$(mktemp)"
-  actual="$(mktemp)"
-
-  read_list "$RPM_OSTREE_BASE_REMOVALS" | sort -u >"$expected"
-  actual_rpm_ostree_base_removals >"$actual"
-
-  print_diff 'rpm-ostree base removals' "$expected" "$actual"
-  rm -f "$expected" "$actual"
-}
-
-audit_rpm_ostree_repo_packages() {
-  need_cmd rpm
-  need_cmd rpm-ostree
-  need_cmd python3
-
-  local expected actual
-  expected="$(mktemp)"
-  actual="$(mktemp)"
-
-  expected_rpm_ostree_repo_packages >"$expected"
-  actual_rpm_ostree_repo_packages >"$actual"
-
-  print_diff 'rpm-ostree repo packages' "$expected" "$actual"
-  rm -f "$expected" "$actual"
-}
-
-audit_flatpak_remotes() {
+audit_system_flathub() {
   need_cmd flatpak
 
-  local expected actual
-  expected="$(mktemp)"
-  actual="$(mktemp)"
-
-  read_list "$USER_FLATPAK_REMOTES" | awk '{ print $1 }' | sort -u >"$expected"
-  actual_flatpak_user_remotes >"$actual"
-
-  print_diff 'flatpak user remote names' "$expected" "$actual"
-  rm -f "$expected" "$actual"
+  printf 'Flatpak system Flathub remote\n'
+  if flatpak remotes --system --columns=name |
+    sed '/^[[:space:]]*$/d' |
+    grep -Fxq flathub; then
+    printf '  ok: available from Aurora\n'
+  else
+    printf '  missing from system: flathub\n'
+  fi
 }
 
-audit_flatpaks() {
+audit_managed_system_flatpaks() {
   need_cmd flatpak
 
-  local expected actual
+  local expected actual missing
   expected="$(mktemp)"
   actual="$(mktemp)"
+  missing="$(mktemp)"
 
-  read_list "$USER_FLATPAKS" | awk -F '\t' 'NF >= 3 { print $1 "\t" $2 "\t" $3 }' | sort -u >"$expected"
-  actual_user_flatpaks >"$actual"
+  sed -n 's/^[[:space:]]*flatpak[[:space:]]*"\([^"]*\)".*$/\1/p' "$BREWFILE" |
+    sort -u >"$expected"
+  flatpak list --system --app --columns=application |
+    sed '/^[[:space:]]*$/d' |
+    sort -u >"$actual"
+  comm -23 "$expected" "$actual" >"$missing"
 
-  print_diff 'flatpak user apps' "$expected" "$actual"
-  rm -f "$expected" "$actual"
+  printf 'managed system Flatpaks\n'
+  if [[ ! -s "$missing" ]]; then
+    printf '  ok: all personal additions are installed\n'
+  else
+    printf '  missing from system:\n'
+    sed 's/^/    /' "$missing"
+  fi
+
+  rm -f "$expected" "$actual" "$missing"
 }
 
 audit_vscode_extensions() {
@@ -220,18 +164,18 @@ audit_vscode_extensions() {
   rm -f "$expected" "$actual"
 }
 
-audit_firewall_ports() {
-  need_cmd firewall-cmd
+audit_brew_formulae() {
+  need_cmd brew
 
   local expected actual
   expected="$(mktemp)"
   actual="$(mktemp)"
 
-  read_list "$FIREWALL_PORTS" | sort -u >"$expected"
-  firewall-cmd --permanent --zone=public --list-ports |
-    tr ' ' '\n' | sed '/^$/d' | sort -u >"$actual"
+  sed -n 's/^[[:space:]]*brew[[:space:]]*"\([^"]*\)".*$/\1/p' "$BREWFILE" |
+    sort -u >"$expected"
+  brew leaves | sort -u >"$actual"
 
-  print_diff 'firewalld public-zone ports' "$expected" "$actual"
+  print_diff 'Homebrew requested formulae' "$expected" "$actual"
   rm -f "$expected" "$actual"
 }
 
@@ -242,7 +186,7 @@ audit_home_directory() {
   expected="$(mktemp)"
   actual="$(mktemp)"
 
-  printf '/home/stella\n' >"$expected"
+  printf '/var/home/stella\n' >"$expected"
   getent passwd stella | cut -d: -f6 >"$actual"
 
   print_diff 'stella passwd home' "$expected" "$actual"
@@ -251,12 +195,10 @@ audit_home_directory() {
 
 main() {
   audit_rpm_ostree_packages
-  audit_rpm_ostree_base_removals
-  audit_rpm_ostree_repo_packages
-  audit_flatpak_remotes
-  audit_flatpaks
+  audit_brew_formulae
+  audit_system_flathub
+  audit_managed_system_flatpaks
   audit_vscode_extensions
-  audit_firewall_ports
   audit_home_directory
 }
 

@@ -1,12 +1,2 @@
 1password
 1password-cli
-NetworkManager-openvpn
-borgbackup
-borgmatic
-btop
-chezmoi
-code
-intel-media-driver
-libavcodec-freeworld
-podman-compose
-vim

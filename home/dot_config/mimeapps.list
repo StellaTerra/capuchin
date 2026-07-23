@@ -1,3 +1,6 @@
+[Added Associations]
+application/pdf=org.kde.okular.desktop;
 
 [Default Applications]
-application/pdf=org.kde.okular.desktop
+application/pdf=org.kde.okular.desktop;
+x-scheme-handler/codex=codex-desktop.desktop

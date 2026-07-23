@@ -1,5 +1,5 @@
 voice = "en_US-hfc_female-medium"
-rate = 50
+rate = 30
 sentence_silence = 0.05
 volume = 1.0
 audio_backend = "auto"

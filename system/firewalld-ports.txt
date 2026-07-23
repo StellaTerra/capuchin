@@ -1,3 +1,0 @@
-# LocalSend discovery and transfer
-53317/tcp
-53317/udp

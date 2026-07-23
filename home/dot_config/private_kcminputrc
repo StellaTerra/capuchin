@@ -1,0 +1,13 @@
+[Keyboard]
+RepeatDelay=250
+RepeatRate=40
+
+[Libinput][1133][16514][Logitech MX Master3 Mac]
+PointerAccelerationProfile=1
+
+[Libinput][13364][2064][Keychron Keychron Q1 Max Mouse]
+PointerAccelerationProfile=1
+
+[Libinput][1739][52744][SYNA30BD:00 06CB:CE08]
+NaturalScroll=true
+ScrollFactor=0.5
