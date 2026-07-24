@@ -1,5 +1,6 @@
 brew "btop"
 brew "chezmoi"
+brew "mpv"
 
 # Personal graphical applications. Aurora's default Flatpaks are intentionally
 # omitted; Aurora manages those through its own system Brewfiles.
