@@ -9,6 +9,7 @@ RPM_REPO_FILES_DIR="$ROOT/repos/yum.repos.d"
 RPM_GPG_DIR="$ROOT/repos/rpm-gpg"
 SYSTEM_FILES_DIR="$ROOT/system"
 BREWFILE="$ROOT/Brewfile"
+HOST_MEMORY_SETUP="/usr/local/sbin/capuchin-memory-setup"
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -96,6 +97,17 @@ install_borg_files() {
       printf 'borgmatic: missing secret file %s; restore it before backups can run\n' "$file"
     fi
   done
+}
+
+install_host_memory_files() {
+  need_cmd cmp
+  need_cmd install
+
+  install_if_changed "$SYSTEM_FILES_DIR/usr/local/sbin/capuchin-memory-setup" "$HOST_MEMORY_SETUP" 0755
+  install_if_changed "$SYSTEM_FILES_DIR/etc/systemd/system/var-swap-swapfile.swap" "/etc/systemd/system/var-swap-swapfile.swap" 0644
+
+  printf 'host: provisioning memory defenses\n'
+  as_root "$HOST_MEMORY_SETUP"
 }
 
 current_rpm_ostree_packages() {
@@ -209,6 +221,10 @@ packages_main() {
   install_missing_vscode_extensions
 }
 
+host_main() {
+  install_host_memory_files
+}
+
 home_main() {
   apply_home_config
 }
@@ -220,9 +236,10 @@ borg_main() {
 
 usage() {
   cat <<'EOF'
-Usage: ./bootstrap.sh [all|packages|home|borg]
+Usage: ./bootstrap.sh [all|host|packages|home|borg]
 
-  all       Provision packages, Borg, and home configuration (default)
+  all       Provision host, packages, Borg, and home configuration (default)
+  host      Provision disk swap and the systemd-oomd root policy
   packages  Provision host packages, Brew formulae, Flatpaks, and VS Code extensions
   home      Apply the Chezmoi home configuration
   borg      Install Borg packages, configuration, service, and timer
@@ -233,9 +250,13 @@ main() {
   local operation="${1:-all}"
   case "$operation" in
     all)
+      host_main
       packages_main
       borg_main
       home_main
+      ;;
+    host)
+      host_main
       ;;
     packages)
       packages_main

@@ -2,7 +2,8 @@
 
 This repository is the rebuild recipe for Stella's Aurora-DX laptop. The
 bootstrap is idempotent: it installs missing software and managed files without
-deleting unmanaged system state.
+deleting unmanaged system state. One known legacy root-slice oomd override is
+explicitly removed by the `host` scope.
 
 ## Managed State
 
@@ -13,6 +14,9 @@ deleting unmanaged system state.
 - selected KDE Plasma settings, the thermal-monitor plasmoid, and five wallpapers
 - device-specific WirePlumber workarounds for the Kanto ORA speakers
 - Borgmatic configuration, service, and timer
+- a 16 GiB low-priority disk swapfile on encrypted Btrfs storage
+- Fedora's default pressure-based systemd-oomd policy, without the legacy
+  root-slice swap-triggered kill override
 - Seafile/application autostart, MIME associations, and the `marmoset` hosts entry
 
 Toshy chooses and layers its own native dependencies. They are listed in
@@ -31,10 +35,11 @@ rebuild-critical state.
 ## Bootstrap Scopes
 
 ```bash
+./bootstrap.sh host      # encrypted disk swap and systemd-oomd root policy
 ./bootstrap.sh packages  # RPM layering, Brew, system Flatpaks, VS Code extensions
 ./bootstrap.sh home      # apply the Chezmoi source
 ./bootstrap.sh borg      # Borg package, config, service, and timer
-./bootstrap.sh all       # all scopes; also the default with no argument
+./bootstrap.sh all       # host plus all other scopes; also the default
 ```
 
 The scopes make it possible to provision Borg without touching the desktop.
@@ -111,6 +116,7 @@ development, preview and review changes in small batches before invoking it.
 
    ```bash
    cd /home/stella/capuchin
+   ./bootstrap.sh host
    ./bootstrap.sh packages
    systemctl reboot
    cd /home/stella/capuchin
@@ -252,6 +258,14 @@ development, preview and review changes in small batches before invoking it.
     ```
 
 ## Device Notes
+
+The `host` scope creates `/var/swap` as a dedicated Btrfs subvolume and a
+16 GiB `/var/swap/swapfile`. Because `/var` resides on the installer's LUKS
+volume, disk swap inherits full-disk encryption. The native
+`var-swap-swapfile.swap` unit activates it at priority 10, after Aurora's
+priority-100 zram. Only after disk swap is active does provisioning remove the
+legacy `/etc/systemd/system/-.slice.d/50-managed-oom.conf` override. Fedora's
+pressure-based systemd-oomd defaults remain active.
 
 Aurora provides the system Flathub remote and its application-management tools
 use that installation. Bootstrap validates and consumes it through `Brewfile`;

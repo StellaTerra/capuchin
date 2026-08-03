@@ -1,0 +1,11 @@
+[Unit]
+Description=Capuchin 16 GiB encrypted disk swap
+Documentation=man:systemd.swap(5)
+ConditionPathExists=/var/swap/swapfile
+
+[Swap]
+What=/var/swap/swapfile
+Priority=10
+
+[Install]
+WantedBy=swap.target

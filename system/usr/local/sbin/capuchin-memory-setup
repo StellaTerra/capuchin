@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SWAP_DIR=/var/swap
+SWAP_FILE=/var/swap/swapfile
+SWAP_SIZE_BYTES=17179869184
+SWAP_UNIT=var-swap-swapfile.swap
+LEGACY_OOMD_DROPIN=/etc/systemd/system/-.slice.d/50-managed-oom.conf
+
+die() {
+  printf 'error: %s\n' "$*" >&2
+  exit 1
+}
+
+need_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
+}
+
+[[ "${EUID:-$(id -u)}" -eq 0 ]] || die 'run this helper as root'
+
+for command in awk btrfs chmod findmnt getconf stat swapon systemctl; do
+  need_cmd "$command"
+done
+
+var_fstype="$(findmnt --noheadings --output FSTYPE --target /var)"
+var_source="$(findmnt --noheadings --output SOURCE --target /var)"
+[[ "$var_fstype" == btrfs ]] || die "/var must be Btrfs; found $var_fstype"
+[[ "$var_source" == /dev/mapper/luks-* ]] || die "/var must be LUKS-backed; found $var_source"
+
+if [[ ! -e "$SWAP_DIR" ]]; then
+  printf 'host: creating Btrfs swap subvolume %s\n' "$SWAP_DIR"
+  btrfs subvolume create "$SWAP_DIR"
+elif ! btrfs subvolume show "$SWAP_DIR" >/dev/null 2>&1; then
+  die "$SWAP_DIR exists but is not a Btrfs subvolume"
+fi
+
+if [[ ! -e "$SWAP_FILE" ]]; then
+  printf 'host: creating 16 GiB Btrfs swapfile %s\n' "$SWAP_FILE"
+  btrfs filesystem mkswapfile --size 16g "$SWAP_FILE"
+elif [[ ! -f "$SWAP_FILE" ]]; then
+  die "$SWAP_FILE exists but is not a regular file"
+fi
+
+actual_size="$(stat --format=%s "$SWAP_FILE")"
+[[ "$actual_size" == "$SWAP_SIZE_BYTES" ]] ||
+  die "$SWAP_FILE is $actual_size bytes; expected $SWAP_SIZE_BYTES"
+chmod 0600 "$SWAP_FILE"
+
+systemctl daemon-reload
+systemctl enable --now "$SWAP_UNIT"
+
+swap_status="$(swapon --show=NAME,SIZE,PRIO --bytes --noheadings --raw | awk '$1 == "/var/swap/swapfile" { print $2, $3 }')"
+swap_usable_bytes="$((SWAP_SIZE_BYTES - $(getconf PAGESIZE)))"
+[[ "$swap_status" == "$swap_usable_bytes 10" ]] ||
+  die "$SWAP_FILE did not activate with the expected size and priority"
+
+if [[ -e "$LEGACY_OOMD_DROPIN" ]]; then
+  printf 'host: removing legacy root-slice oomd override %s\n' "$LEGACY_OOMD_DROPIN"
+  rm -f -- "$LEGACY_OOMD_DROPIN"
+fi
+systemctl daemon-reload
+
+managed_oom_swap="$(systemctl show --property=ManagedOOMSwap --value -- -.slice)"
+[[ "$managed_oom_swap" == auto ]] ||
+  die "root slice still has ManagedOOMSwap=$managed_oom_swap; expected auto"
+
+printf 'host: 16 GiB disk swap is active at priority 10; root ManagedOOMSwap is auto\n'

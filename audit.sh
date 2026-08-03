@@ -193,7 +193,54 @@ audit_home_directory() {
   rm -f "$expected" "$actual"
 }
 
+audit_host_memory() {
+  need_cmd awk
+  need_cmd findmnt
+  need_cmd getconf
+  need_cmd swapon
+  need_cmd systemctl
+
+  local swap_status swap_usable_bytes var_fstype var_source managed_oom_swap
+  swap_status="$(swapon --show=NAME,SIZE,PRIO --bytes --noheadings --raw | awk '$1 == "/var/swap/swapfile" { print $2, $3 }')"
+  swap_usable_bytes="$((17179869184 - $(getconf PAGESIZE)))"
+  var_fstype="$(findmnt --noheadings --output FSTYPE --target /var)"
+  var_source="$(findmnt --noheadings --output SOURCE --target /var)"
+
+  printf 'host memory defenses\n'
+  if [[ "$swap_status" == "$swap_usable_bytes 10" ]]; then
+    printf '  ok: 16 GiB disk swap is active at priority 10\n'
+  else
+    printf '  mismatch: expected active 16 GiB /var/swap/swapfile at priority 10; got %s\n' "${swap_status:-inactive}"
+  fi
+
+  if [[ "$var_fstype" == btrfs && "$var_source" == /dev/mapper/luks-* ]]; then
+    printf '  ok: swap path is on LUKS-backed Btrfs /var\n'
+  else
+    printf '  mismatch: expected LUKS-backed Btrfs /var; got %s on %s\n' "$var_fstype" "$var_source"
+  fi
+
+  if systemctl is-enabled --quiet var-swap-swapfile.swap; then
+    printf '  ok: disk swap unit is enabled\n'
+  else
+    printf '  mismatch: var-swap-swapfile.swap is not enabled\n'
+  fi
+
+  if [[ -e /etc/systemd/system/-.slice.d/50-managed-oom.conf ]]; then
+    printf '  mismatch: legacy root-slice ManagedOOMSwap override is present\n'
+  else
+    printf '  ok: legacy root-slice ManagedOOMSwap override is absent\n'
+  fi
+
+  managed_oom_swap="$(systemctl show --property=ManagedOOMSwap --value -- -.slice)"
+  if [[ "$managed_oom_swap" == auto ]]; then
+    printf '  ok: root slice uses the default ManagedOOMSwap=auto policy\n'
+  else
+    printf '  mismatch: root slice ManagedOOMSwap is %s, expected auto\n' "$managed_oom_swap"
+  fi
+}
+
 main() {
+  audit_host_memory
   audit_rpm_ostree_packages
   audit_brew_formulae
   audit_system_flathub
