@@ -1,0 +1,23 @@
+<<: !include capuchin-common.yaml
+
+repositories:
+  - path: ssh://tqqo6ove@tqqo6ove.repo.borgbase.com/./repo
+    label: borgbase
+
+compression: zstd,6
+archive_name_format: capuchin-{now:%Y-%m-%dT%H:%M:%S}
+
+ssh_command: ssh -i /etc/borgbase-capuchin/ssh_key -o UserKnownHostsFile=/etc/borgbase-capuchin/known_hosts -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o ServerAliveInterval=10 -o ServerAliveCountMax=30
+encryption_passcommand: cat /etc/borgbase-capuchin/passphrase
+
+keep_daily: 14
+keep_weekly: 8
+keep_monthly: 12
+keep_yearly: 5
+
+checks:
+  - name: repository
+    frequency: 1 month
+
+retries: 3
+retry_wait: 10

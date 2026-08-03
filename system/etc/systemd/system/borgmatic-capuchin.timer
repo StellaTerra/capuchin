@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily sequential Borgmatic backups for Capuchin
+
+[Timer]
+OnCalendar=*-*-* 03:17:00
+Persistent=true
+RandomizedDelaySec=10m
+Unit=borgmatic-capuchin.service
+
+[Install]
+WantedBy=timers.target

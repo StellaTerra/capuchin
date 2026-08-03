@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+notify_user="stella"
+notify_uid="$(id -u "$notify_user")"
+notify() {
+  local title="$1"
+  local body="$2"
+
+  if [[ -S "/run/user/$notify_uid/bus" ]]; then
+    sudo -u "$notify_user" \
+      DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$notify_uid/bus" \
+      notify-send "$title" "$body" || true
+  fi
+}
+
+run_backup() {
+  local destination="$1"
+  local config_file="$2"
+  local log_file="$3"
+  shift 3
+  local actions=("$@")
+  local rc
+
+  printf 'Starting %s backup; log: %s\n' "$destination" "$log_file"
+  set +e
+  /usr/bin/borgmatic --config "$config_file" "${actions[@]}" --verbosity 1 >"$log_file" 2>&1
+  rc="$?"
+  set -e
+
+  if [[ "$rc" -eq 0 ]]; then
+    notify "$destination backup complete" "Capuchin backup and retention completed successfully."
+    printf '%s backup completed successfully\n' "$destination"
+  else
+    notify "$destination backup failed" "borgmatic exited with code $rc. See $log_file."
+    printf '%s backup failed with exit code %s; see %s\n' "$destination" "$rc" "$log_file" >&2
+  fi
+
+  return "$rc"
+}
+
+exec 9>/run/lock/borgmatic-capuchin.lock
+/usr/bin/flock --exclusive 9
+
+overall_rc=0
+
+if ! run_backup \
+  "Marmoset" \
+  /etc/borgmatic/config.yaml \
+  /var/log/borgmatic-marmoset.log \
+  create prune compact check; then
+  overall_rc=1
+fi
+
+if [[ -e /etc/borgbase-capuchin/enable-full-backup ]]; then
+  if ! run_backup \
+    "BorgBase" \
+    /etc/borgmatic/borgbase-capuchin.yaml \
+    /var/log/borgmatic-borgbase-capuchin.log \
+    create prune check; then
+    overall_rc=1
+  fi
+else
+  printf '%s\n' 'Skipping BorgBase full backup: enable marker is absent'
+fi
+
+exit "$overall_rc"

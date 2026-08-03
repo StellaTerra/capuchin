@@ -13,7 +13,8 @@ explicitly removed by the `host` scope.
 - VS Code, Toshy, shell, SSH, Readaloud, and selected application configuration
 - selected KDE Plasma settings, the thermal-monitor plasmoid, and five wallpapers
 - device-specific WirePlumber workarounds for the Kanto ORA speakers
-- Borgmatic configuration, service, and timer
+- independent Borgmatic configurations and logs for the local Marmoset and
+  off-site BorgBase repositories, orchestrated by one low-priority service
 - a 16 GiB low-priority disk swapfile on encrypted Btrfs storage
 - Fedora's default pressure-based systemd-oomd policy, without the legacy
   root-slice swap-triggered kill override
@@ -244,6 +245,35 @@ development, preview and review changes in small batches before invoking it.
     sudo chown -R stella:stella /home/stella/.codex
     ```
 
+    Provision the independent BorgBase credentials from the 1Password item
+    **BorgBase Borg Capuchin**. The assigned SSH key is append-only; the
+    protected personal management key is not installed on Capuchin.
+
+    ```bash
+    sudo install -d -o root -g root -m 0700 /etc/borgbase-capuchin
+    op read 'op://Private/BorgBase Borg Capuchin/private key' | \
+      sudo install -o root -g root -m 0600 /dev/stdin /etc/borgbase-capuchin/ssh_key
+    op read 'op://Private/BorgBase Borg Capuchin/public key' | \
+      sudo install -o root -g root -m 0644 /dev/stdin /etc/borgbase-capuchin/ssh_key.pub
+    op read 'op://Private/BorgBase Borg Capuchin/Repo Encryption Passphrase' | \
+      sudo install -o root -g root -m 0600 /dev/stdin /etc/borgbase-capuchin/passphrase
+    ```
+
+    Populate `/etc/borgbase-capuchin/known_hosts` only after comparing the
+    scanned keys with BorgBase's published SSH host-key fingerprints:
+
+    ```bash
+    ssh-keyscan tqqo6ove.repo.borgbase.com | \
+      sudo install -o root -g root -m 0644 /dev/stdin /etc/borgbase-capuchin/known_hosts
+    sudo stat -c '%U:%G %a %n' /etc/borgbase-capuchin /etc/borgbase-capuchin/*
+    ```
+
+    `./bootstrap.sh borg` installs and enables one combined Capuchin timer. It
+    always runs the existing Marmoset backup first. The BorgBase step requires
+    the root-owned `/etc/borgbase-capuchin/enable-full-backup` marker, so a
+    routine bootstrap cannot upload the full workstation before its smoke
+    restore and quota validation are complete.
+
     Finally, audit the workstation and run one backup:
 
     ```bash
@@ -253,9 +283,98 @@ development, preview and review changes in small batches before invoking it.
     code --list-extensions
     toshy-services-status
     readaloud doctor
-    sudo systemctl start borgmatic-marmoset.service
-    systemctl status borgmatic-marmoset.service --no-pager
+    sudo systemctl start borgmatic-capuchin.service
+    systemctl status borgmatic-capuchin.service --no-pager
     ```
+
+## BorgBase Off-site Backup
+
+The existing Marmoset backup remains unchanged as a destination. BorgBase is a
+second repository with its own config, credentials, log, and notification.
+Both destination configs deep-merge `capuchin-common.yaml`, which owns the
+shared source directories and exclusion policy. Change those paths only in the
+common file so the local and off-site archives cannot drift apart.
+The root-only Borg client credential directories are exact exclusions because
+their authoritative copies and recovery material live in 1Password.
+One persistent timer invokes `/usr/local/sbin/borgmatic-capuchin-backup`, which
+runs Marmoset first and BorgBase second. If Marmoset fails, BorgBase is still
+attempted; the combined service fails if either enabled destination fails.
+
+The script holds `/run/lock/borgmatic-capuchin.lock` for the complete sequence,
+preventing another scheduled or manual run from competing for resources. The
+service uses the idle CPU and I/O scheduling classes, nice level 19, and the
+minimum cgroup CPU and I/O weights. These are priorities rather than a hard CPU
+limit: desktop work takes precedence, while backups can use otherwise-idle
+capacity and still finish.
+
+The BorgBase policy is:
+
+- daily start at 03:17 with up to 10 minutes of jitter
+- both repositories retain 14 daily, 8 weekly, 12 monthly, and 5 yearly
+  archives
+- a repository consistency check no more than monthly
+- three retries with increasing 10-second waits for transient failures
+- client-side `repokey-blake2` encryption when the repository is initialized
+- no client compaction; BorgBase performs the enabled server-side compaction
+  monthly
+- a 100 GB hard repository quota, initially using about 20.23 GB
+
+The BorgBase repository currently follows BorgBase's `Latest stable` setting,
+while Capuchin uses the Borg client supplied by Aurora. Check compatibility
+before either side moves to a new Borg major version.
+
+### Repository initialization and activation
+
+On a new or rebuilt client, do not create the enable marker yet. The combined
+timer can safely remain enabled because it skips BorgBase while the marker is
+absent. After reviewing and deploying this configuration, initialize the empty
+repository and create only a tiny test archive with the same root-only
+credentials used by the service:
+
+```bash
+borgbase_repo='ssh://tqqo6ove@tqqo6ove.repo.borgbase.com/./repo'
+borgbase_rsh='ssh -i /etc/borgbase-capuchin/ssh_key -o UserKnownHostsFile=/etc/borgbase-capuchin/known_hosts -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes'
+
+sudo env \
+  BORG_RSH="$borgbase_rsh" \
+  BORG_PASSCOMMAND='cat /etc/borgbase-capuchin/passphrase' \
+  borg init --encryption=repokey-blake2 "$borgbase_repo"
+
+sudo env \
+  BORG_RSH="$borgbase_rsh" \
+  BORG_PASSCOMMAND='cat /etc/borgbase-capuchin/passphrase' \
+  borg create --stats \
+  "$borgbase_repo"::capuchin-smoke-{now:%Y-%m-%dT%H:%M:%S} /etc/hostname
+```
+
+Export the Borg encryption key as the Private-vault 1Password Document
+**BorgBase Borg Capuchin Repo Encryption Key** before relying on the repository.
+The passphrase remains in the **BorgBase Borg Capuchin** SSH Key item. Do not
+leave the exported recovery file on Capuchin. Listing and extracting
+`/etc/hostname` from the smoke archive are the next verification checkpoint.
+
+Only after the smoke restore succeeds, recovery material is safely stored,
+and the paid-plan quota is configured should the full backup be activated:
+
+```bash
+sudo install -o root -g root -m 0600 /dev/null \
+  /etc/borgbase-capuchin/enable-full-backup
+```
+
+The next combined run will perform Marmoset and then BorgBase. To run it
+immediately, explicitly start `borgmatic-capuchin.service`.
+
+Inspect failures with:
+
+```bash
+systemctl status borgmatic-capuchin.service --no-pager
+sudo journalctl -u borgmatic-capuchin.service
+sudo less /var/log/borgmatic-marmoset.log
+sudo less /var/log/borgmatic-borgbase-capuchin.log
+```
+
+BorgBase stale-backup alerts remain intentionally disabled for now. Enable
+them when alerting is desired; the daily timer is already authoritative.
 
 ## Device Notes
 

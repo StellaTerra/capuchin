@@ -1,0 +1,17 @@
+[Unit]
+Description=Sequential Borgmatic backups for Capuchin
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/borgmatic-capuchin-backup
+TimeoutStartSec=infinity
+TimeoutStopSec=30min
+
+# Keep backup work behind interactive desktop workloads.
+Nice=19
+CPUSchedulingPolicy=idle
+CPUWeight=1
+IOSchedulingClass=idle
+IOWeight=1

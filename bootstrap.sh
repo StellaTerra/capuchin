@@ -73,10 +73,12 @@ install_borg_files() {
   need_cmd install
   need_cmd tee
 
+  install_if_changed "$SYSTEM_FILES_DIR/etc/borgmatic/capuchin-common.yaml" "/etc/borgmatic/capuchin-common.yaml" 0600
   install_if_changed "$SYSTEM_FILES_DIR/etc/borgmatic/config.yaml" "/etc/borgmatic/config.yaml" 0600
-  install_if_changed "$SYSTEM_FILES_DIR/etc/systemd/system/borgmatic-marmoset.service" "/etc/systemd/system/borgmatic-marmoset.service" 0644
-  install_if_changed "$SYSTEM_FILES_DIR/etc/systemd/system/borgmatic-marmoset.timer" "/etc/systemd/system/borgmatic-marmoset.timer" 0644
-  install_if_changed "$SYSTEM_FILES_DIR/usr/local/sbin/borgmatic-marmoset-backup" "/usr/local/sbin/borgmatic-marmoset-backup" 0755
+  install_if_changed "$SYSTEM_FILES_DIR/etc/borgmatic/borgbase-capuchin.yaml" "/etc/borgmatic/borgbase-capuchin.yaml" 0600
+  install_if_changed "$SYSTEM_FILES_DIR/etc/systemd/system/borgmatic-capuchin.service" "/etc/systemd/system/borgmatic-capuchin.service" 0644
+  install_if_changed "$SYSTEM_FILES_DIR/etc/systemd/system/borgmatic-capuchin.timer" "/etc/systemd/system/borgmatic-capuchin.timer" 0644
+  install_if_changed "$SYSTEM_FILES_DIR/usr/local/sbin/borgmatic-capuchin-backup" "/usr/local/sbin/borgmatic-capuchin-backup" 0755
 
   local hosts_entry
   while IFS= read -r hosts_entry; do
@@ -89,7 +91,16 @@ install_borg_files() {
 
   if command -v systemctl >/dev/null 2>&1; then
     as_root systemctl daemon-reload
-    as_root systemctl enable --now borgmatic-marmoset.timer
+    as_root systemctl enable --now borgmatic-capuchin.timer
+
+    if as_root test -e /etc/systemd/system/borgmatic-marmoset.timer; then
+      as_root systemctl disable --now borgmatic-marmoset.timer
+      as_root rm -f \
+        /etc/systemd/system/borgmatic-marmoset.service \
+        /etc/systemd/system/borgmatic-marmoset.timer \
+        /usr/local/sbin/borgmatic-marmoset-backup
+      as_root systemctl daemon-reload
+    fi
   fi
 
   for file in /etc/borg-marmoset/ssh_key /etc/borg-marmoset/known_hosts /etc/borg-marmoset/passphrase; do
@@ -97,6 +108,16 @@ install_borg_files() {
       printf 'borgmatic: missing secret file %s; restore it before backups can run\n' "$file"
     fi
   done
+
+  for file in /etc/borgbase-capuchin/ssh_key /etc/borgbase-capuchin/known_hosts /etc/borgbase-capuchin/passphrase; do
+    if ! as_root test -e "$file"; then
+      printf 'borgmatic: missing BorgBase secret file %s; restore it before off-site backups can run\n' "$file"
+    fi
+  done
+
+  if ! as_root test -e /etc/borgbase-capuchin/enable-full-backup; then
+    printf '%s\n' 'borgmatic: BorgBase full backup is staged but disabled; see README.md before activation'
+  fi
 }
 
 install_host_memory_files() {
